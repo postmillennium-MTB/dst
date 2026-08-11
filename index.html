@@ -45,7 +45,8 @@
   --cat-medicaloffice:  #4a3aa7; /* violet  */
   --cat-retail:         #e34948; /* red     */
 
-  --good-text: #006300; /* profit / positive figures */
+  --good-text:    #006300; /* profit / positive figures */
+  --warning-text: #8a5000; /* soft non-blocking warnings, e.g. below-minimum DST allocation */
 
   /* Two-slice "where the gains come from" donut (cash flow vs. appreciation).
      Deliberately its own pair, not borrowed from the DST category colors
@@ -233,7 +234,7 @@ input[type="range"] {
 
 /* ---- Boot (cash taken out of the exchange) ------------------------------- */
 .boot-row { margin-top: 14px; }
-.boot-row .field { max-width: 180px; flex: 1 1 160px; }
+.boot-row .field { max-width: 210px; flex: 1 1 190px; }
 .boot-banner {
   flex: 2 1 320px;
   display: flex;
@@ -248,6 +249,38 @@ input[type="range"] {
 }
 .boot-banner strong { color: var(--text-primary); }
 .boot-banner.hidden { display: none; }
+.boot-banner.warn strong.negative { color: #c22; }
+
+/* ---- Advanced tax details (depreciation recapture + debt-relief boot) ----- */
+#advTaxPanel { margin-top: 14px; display: none; }
+#advTaxPanel.visible { display: block; }
+.adv-tax-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.adv-tax-fields .field { max-width: 220px; flex: 1 1 190px; }
+.boot-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--surface-inset);
+  font-size: 0.86rem;
+  color: var(--text-secondary);
+}
+.boot-detail strong { color: var(--text-primary); }
+
+/* ---- Below-minimum DST allocation warning ---------------------------------- */
+.min-warning { font-size: 0.78rem; color: var(--warning-text); margin-top: 4px; }
+
+/* ---- Non-fiduciary editable fee rates -------------------------------------- */
+#feeRatesPanel { margin-top: 14px; display: none; }
+#feeRatesPanel.visible { display: block; }
+.fee-rates-fields { display: flex; flex-wrap: wrap; gap: 14px; }
+.fee-rates-fields .field { max-width: 180px; flex: 1 1 160px; }
 
 /* ---- Add-DST controls ---------------------------------------------------- */
 .add-row {
@@ -310,14 +343,34 @@ table.breakdown .cat-badge svg { width: 11px; height: 11px; }
   padding: 16px 18px;
   background: var(--surface-inset);
 }
+.dst-card.collapsed { padding-bottom: 16px; }
 .dst-card-head {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 14px;
 }
+.dst-card.collapsed .dst-card-head { margin-bottom: 0; }
 .dst-card-head .cat-name { font-weight: 700; font-size: 0.95rem; }
 .dst-card-head .spacer { flex: 1; }
+.collapse-btn {
+  background: transparent;
+  border: none;
+  padding: 4px;
+  display: inline-flex;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: transform 0.15s ease;
+}
+.collapse-btn:hover { color: var(--text-primary); background: var(--surface-page); }
+.dst-card.collapsed .collapse-btn { transform: rotate(-90deg); }
+.dst-card-summary {
+  margin-top: 10px;
+  font-size: 0.86rem;
+  color: var(--text-secondary);
+}
+.dst-card-summary strong { color: var(--text-primary); }
 .dst-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -369,15 +422,17 @@ table.breakdown .cat-badge svg { width: 11px; height: 11px; }
 table.breakdown {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.86rem;
+  font-size: 0.83rem;
 }
 table.breakdown th, table.breakdown td {
   text-align: right;
-  padding: 8px 10px;
+  padding: 7px 8px;
   border-bottom: 1px solid var(--gridline);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+table.breakdown td.cf-cell { line-height: 1.35; }
+table.breakdown td.cf-cell .cf-mo { display: block; color: var(--text-muted); font-size: 0.85em; }
 table.breakdown th:first-child, table.breakdown td:first-child {
   text-align: left;
   font-variant-numeric: normal;
@@ -482,7 +537,7 @@ footer.disclaimer {
          received, at capital gains rates. -->
     <div class="proceeds-row boot-row">
       <div class="field">
-        <label class="field-label" for="capGainsRate">Capital gains tax rate</label>
+        <label class="field-label" for="capGainsRate">Cap. gains rate</label>
         <div class="stepper-field">
           <input type="number" id="capGainsRate" min="0" max="100" step="1" value="20" style="padding-left:10px; padding-right:76px;">
           <span class="field-affix suffix">%</span>
@@ -494,9 +549,29 @@ footer.disclaimer {
       </div>
       <div class="boot-banner hidden" id="bootBanner">
         <span>Cash taken out (boot) <strong id="bootAmount">$0</strong></span>
-        <span>Est. capital gains tax <strong id="bootTax">$0</strong></span>
+        <span>Est. tax <strong id="bootTax">$0</strong></span>
         <span>You keep <strong id="bootNet">$0</strong></span>
       </div>
+    </div>
+
+    <!-- Advanced: real 1031 boot isn't always this simple -- depreciation
+         recapture is taxed first (up to 25% federal) before any remaining
+         gain gets the capital-gains rate, and giving up more debt than you
+         take on (debt-relief boot) is taxable even with zero cash boot. Off
+         by default so the common case stays a single flat-rate estimate. -->
+    <label class="advanced-toggle" style="margin-top:14px;">
+      <input type="checkbox" id="advTaxToggle">
+      Advanced: depreciation recapture &amp; debt-relief boot
+    </label>
+    <div id="advTaxPanel">
+      <p class="hint" style="margin-top:10px;">
+        Depreciation recapture is recognized first (up to the lesser of accumulated depreciation or total
+        boot), taxed at the recapture rate; any remaining boot is taxed at the capital gains rate above.
+        Debt-relief boot is the amount your DSTs' combined debt falls short of the debt you gave up on the
+        relinquished property -- taxable even if you took no cash out.
+      </p>
+      <div id="advTaxFieldsWrap"></div>
+      <div class="boot-detail" id="bootDetail"></div>
     </div>
   </section>
 
@@ -508,6 +583,9 @@ footer.disclaimer {
     <div class="add-row">
       <select id="categoryPicker"></select>
       <button class="primary" id="addDstBtn" type="button">+ Add DST</button>
+      <span class="spacer" style="flex:1"></span>
+      <button class="ghost" id="expandAllBtn" type="button">Expand all</button>
+      <button class="ghost" id="collapseAllBtn" type="button">Collapse all</button>
     </div>
 
     <div id="dstList"></div>
@@ -531,8 +609,7 @@ footer.disclaimer {
             <th>Fees</th>
             <th>Leverage</th>
             <th>Hold (yrs)</th>
-            <th>Cash flow ($/yr)</th>
-            <th>Cash flow ($/mo)</th>
+            <th>Cash flow</th>
             <th>Appreciation gain</th>
             <th>Total profit</th>
             <th>Annualized return</th>
@@ -573,6 +650,9 @@ footer.disclaimer {
         <span class="hint" id="fiduciaryHint"></span>
       </span>
     </label>
+    <div id="feeRatesPanel">
+      <div class="fee-rates-fields" id="feeRatesFieldsWrap"></div>
+    </div>
   </section>
 
   <footer class="disclaimer">
@@ -613,6 +693,7 @@ const ICON_PATHS = {
   up:            `<rect width="18" height="18" x="3" y="3" rx="2"/><path d="m16 12-4-4-4 4"/><path d="M12 16V8"/>`,
   down:          `<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 8v8"/><path d="m8 12 4 4 4-4"/>`,
   handshake:     `<path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"/><path d="M3 4h8"/>`,
+  chevronDown:   `<path d="m6 9 6 6 6-6"/>`,
 };
 function svgIcon(name, size = 16) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name] || ""}</svg>`;
@@ -656,15 +737,29 @@ const MC_ITERATIONS = 4000; // Monte Carlo draws per run -- plenty smooth, still
 // selling commission plus a dealer-manager/placement fee, both deducted from
 // the capital before it's put to work. A fiduciary/fee-only structure has
 // neither. Toggled globally via the "Fiduciary" switch at the bottom of the
-// page -- tune these two constants to model a different fee schedule.
-const NON_FIDUCIARY_UPFRONT_FEE_PCT = 5.0;
-const NON_FIDUCIARY_PLACEMENT_FEE_PCT = 1.5;
+// page. These are just the starting values for the editable "Upfront fee"
+// and "Placement fee" fields (revealed when Fiduciary is off) -- real
+// programs vary (reported combined loads run roughly 5-10%), so they're
+// tunable per scenario rather than fixed.
+const DEFAULT_UPFRONT_FEE_PCT = 5.0;
+const DEFAULT_PLACEMENT_FEE_PCT = 1.5;
 
 // Default capital gains rate assumed for "boot" -- 1031 exchange proceeds
 // that are cashed out instead of rolled into a DST. Just a starting point
-// for the editable "Capital gains tax rate" field; 20% is the top federal
+// for the editable "Cap. gains rate" field; 20% is the top federal
 // long-term rate (state tax and the 3.8% NIIT surtax aren't modeled here).
 const DEFAULT_CAP_GAINS_RATE_PCT = 20;
+
+// Default rate for the "Advanced" depreciation-recapture split -- 25% is the
+// maximum federal rate on unrecaptured Section 1250 gain (state tax isn't
+// modeled here, same as the capital gains rate above).
+const DEFAULT_DEP_RECAPTURE_RATE_PCT = 25;
+
+// Typical minimum check size sponsors set per DST (commonly reported in the
+// $25,000-$100,000 range). Purely an informational nudge -- allocating less
+// than this into a single DST isn't blocked, just flagged, since the tool
+// can't know a specific sponsor's actual minimum.
+const MIN_DST_INVESTMENT = 25000;
 
 /* ----------------------------------------------------------------------------
    2. STATE
@@ -677,24 +772,63 @@ const DEFAULT_CAP_GAINS_RATE_PCT = 20;
 let nextId = 1;
 const state = {
   totalProceeds: 2000000,
-  fiduciary: true, // no upfront/placement fees while true; see NON_FIDUCIARY_* above
-  capGainsRate: DEFAULT_CAP_GAINS_RATE_PCT, // applied to any boot (unallocated proceeds taken as cash)
-  dsts: [], // { id, category, amount, cashOnCash, leverage, appreciation, years }
+  fiduciary: true, // no upfront/placement fees while true
+  upfrontFeeRate: DEFAULT_UPFRONT_FEE_PCT,     // editable, only matters while !fiduciary
+  placementFeeRate: DEFAULT_PLACEMENT_FEE_PCT, // editable, only matters while !fiduciary
+  capGainsRate: DEFAULT_CAP_GAINS_RATE_PCT,    // applied to any boot (unallocated proceeds taken as cash)
+  advancedTax: false,                          // gates depreciation recapture + debt-relief boot below
+  accumulatedDepreciation: 0,                  // $ of depreciation taken on the relinquished property
+  depRecaptureRate: DEFAULT_DEP_RECAPTURE_RATE_PCT,
+  relinquishedDebt: 0,                         // $ of debt paid off / given up on the relinquished property
+  dsts: [], // { id, category, amount, cashOnCash, leverage, appreciation, years, collapsed }
 };
 
-// Whatever's left of totalProceeds after allocating to DSTs is "boot" --
-// proceeds not rolled into replacement property, taxable as capital gain
-// in the year received. This is a simplified model: it assumes the full
-// boot amount is taxable gain, which is true whenever the investor's
-// total realized gain on the relinquished property is at least the boot
-// (the common case for an appreciated property) -- it doesn't track the
-// original cost basis, so it can't check that assumption itself.
-function computeBoot(totalProceeds, dsts, capGainsRatePct) {
+// Whatever's left of totalProceeds after allocating to DSTs is cash boot --
+// proceeds not rolled into replacement property, taxable in the year
+// received. When advancedTax is off, this is the whole story: the full cash
+// boot is taxed at capGainsRatePct, a simplified model that assumes the
+// investor's total realized gain on the relinquished property is at least
+// the boot (the common case for an appreciated property) -- it doesn't
+// track the original cost basis, so it can't check that assumption itself.
+//
+// When advancedTax is on, two more real-world wrinkles are modeled:
+//   - Debt-relief boot: if the DSTs' combined debt is less than the debt
+//     given up on the relinquished property, that shortfall is boot too,
+//     even with zero cash received. replacementDebt is derived from the
+//     already-computed portfolio rows (each DST's net equity * leverage).
+//   - Recapture ordering: when gain is boot-limited, recognized gain is
+//     treated as depreciation recapture FIRST (capped at accumulated
+//     depreciation, taxed at depRecaptureRatePct), and only gain beyond
+//     that is capital gain -- so the two rates are applied in that order,
+//     not blended.
+function computeBoot(totalProceeds, dsts, portfolioRows, opts) {
+  const { capGainsRatePct, advancedTax, accumulatedDepreciation, depRecaptureRatePct, relinquishedDebt } = opts;
   const allocated = dsts.reduce((s, d) => s + d.amount, 0);
-  const boot = Math.max(totalProceeds - allocated, 0);
-  const tax = boot * (capGainsRatePct / 100);
-  const netCash = boot - tax;
-  return { boot, tax, netCash };
+  const cashBoot = Math.max(totalProceeds - allocated, 0);
+
+  let debtReliefBoot = 0;
+  if (advancedTax) {
+    const replacementDebt = portfolioRows.reduce((s, r) => s + r.equity * (r.dst.leverage / 100), 0);
+    debtReliefBoot = Math.max(relinquishedDebt - replacementDebt, 0);
+  }
+  const totalBoot = cashBoot + debtReliefBoot;
+
+  let recaptureTax = 0, capGainTax = 0;
+  if (advancedTax) {
+    const recapturePortion = Math.min(Math.max(accumulatedDepreciation, 0), totalBoot);
+    const capGainPortion = totalBoot - recapturePortion;
+    recaptureTax = recapturePortion * (depRecaptureRatePct / 100);
+    capGainTax = capGainPortion * (capGainsRatePct / 100);
+  } else {
+    capGainTax = totalBoot * (capGainsRatePct / 100);
+  }
+  const tax = recaptureTax + capGainTax;
+  // Only cash boot is actually money in hand -- debt-relief boot creates a
+  // tax bill without a matching cash distribution, so this can go negative
+  // (a real, worth-knowing scenario: owing more tax than cash received).
+  const netCash = cashBoot - tax;
+
+  return { cashBoot, debtReliefBoot, totalBoot, recaptureTax, capGainTax, tax, netCash };
 }
 
 function makeDst(categoryKey) {
@@ -709,6 +843,7 @@ function makeDst(categoryKey) {
     leverage: def.leverage,
     appreciation: def.appreciation,
     years: DEFAULT_HOLD_YEARS,
+    collapsed: false,
   };
 }
 
@@ -731,15 +866,16 @@ function makeDst(categoryKey) {
    leveraged value, regardless of the debt payoff at sale (it cancels out).
 
    Fee model: `grossAmount` is what the investor actually commits from their
-   1031 proceeds. When not fiduciary, a combined upfront + placement fee is
-   taken off the top; only what's left (`equity`) is actually deployed and
-   earning cash flow / appreciation. Profit and annualized return are then
-   measured against `grossAmount` -- what the investor really gave up -- so
-   the fee shows up as a return drag, not just a footnote.
+   1031 proceeds. When not fiduciary, a combined upfront + placement fee
+   (`totalFeePct`, the sum of the two editable fee-rate fields) is taken off
+   the top; only what's left (`equity`) is actually deployed and earning
+   cash flow / appreciation. Profit and annualized return are then measured
+   against `grossAmount` -- what the investor really gave up -- so the fee
+   shows up as a return drag, not just a footnote.
    ---------------------------------------------------------------------------- */
-function computeDst(dst, fiduciary) {
+function computeDst(dst, fiduciary, totalFeePct) {
   const grossAmount = dst.amount;
-  const feeRate = fiduciary ? 0 : (NON_FIDUCIARY_UPFRONT_FEE_PCT + NON_FIDUCIARY_PLACEMENT_FEE_PCT) / 100;
+  const feeRate = fiduciary ? 0 : totalFeePct / 100;
   const feesPaid = grossAmount * feeRate;
   const equity = grossAmount - feesPaid; // net capital actually put to work
 
@@ -779,11 +915,11 @@ function computeDst(dst, fiduciary) {
 // individual cash flows / exit), but is accurate for the totals and is
 // clearly documented here if a true multi-cashflow IRR is ever wanted
 // instead.
-function computePortfolio(dsts, fiduciary) {
+function computePortfolio(dsts, fiduciary, totalFeePct) {
   if (dsts.length === 0) {
     return { totalGross: 0, totalFees: 0, totalEquity: 0, totalAnnualCashFlow: 0, totalMonthlyCashFlow: 0, totalCashFlow: 0, totalAppreciation: 0, totalProfit: 0, totalFinalValue: 0, blendedAnnualizedReturn: 0, weightedYears: 0, rows: [] };
   }
-  const rows = dsts.map(d => ({ dst: d, ...computeDst(d, fiduciary) }));
+  const rows = dsts.map(d => ({ dst: d, ...computeDst(d, fiduciary, totalFeePct) }));
   const totalGross = rows.reduce((s, r) => s + r.grossAmount, 0);
   const totalFees = rows.reduce((s, r) => s + r.feesPaid, 0);
   const totalEquity = rows.reduce((s, r) => s + r.equity, 0);
@@ -830,14 +966,14 @@ function buildWeightedSampler(weights) {
 }
 const sampleHoldYears = buildWeightedSampler(HOLD_PERIOD_WEIGHTS);
 
-function runMonteCarlo(dsts, iterations, fiduciary) {
+function runMonteCarlo(dsts, iterations, fiduciary, totalFeePct) {
   const returns = [];
   const profits = [];
   for (let i = 0; i < iterations; i++) {
     let totalGross = 0, totalFinal = 0, weightedYearsSum = 0;
     for (const d of dsts) {
       const draw = { ...d, years: sampleHoldYears() };
-      const r = computeDst(draw, fiduciary);
+      const r = computeDst(draw, fiduciary, totalFeePct);
       totalGross += r.grossAmount;
       totalFinal += r.finalValue;
       weightedYearsSum += r.grossAmount * draw.years;
@@ -1029,6 +1165,14 @@ const bootBannerEl = document.getElementById("bootBanner");
 const bootAmountEl = document.getElementById("bootAmount");
 const bootTaxEl = document.getElementById("bootTax");
 const bootNetEl = document.getElementById("bootNet");
+const advTaxToggleEl = document.getElementById("advTaxToggle");
+const advTaxPanelEl = document.getElementById("advTaxPanel");
+const advTaxFieldsWrapEl = document.getElementById("advTaxFieldsWrap");
+const bootDetailEl = document.getElementById("bootDetail");
+const feeRatesPanelEl = document.getElementById("feeRatesPanel");
+const feeRatesFieldsWrapEl = document.getElementById("feeRatesFieldsWrap");
+const expandAllBtnEl = document.getElementById("expandAllBtn");
+const collapseAllBtnEl = document.getElementById("collapseAllBtn");
 const gainMixWrapEl = document.getElementById("gainMixWrap");
 
 // Fill in the stepper buttons' icons that live in static HTML (the
@@ -1048,6 +1192,13 @@ function renderAllocationBanner() {
   allocBannerEl.classList.toggle("over", remaining < 0);
 }
 
+// Compact one-line summary shown in place of the full field grid when a
+// card is collapsed -- lets a 3+ DST portfolio (the tool's "complex demo"
+// use case) fit on screen without losing at-a-glance numbers.
+function dstSummaryHTML(dst) {
+  return `${fmtUSD.format(dst.amount)} &middot; ${dst.cashOnCash}% CoC &middot; ${dst.leverage}% leverage &middot; ${dst.years}yr hold`;
+}
+
 function renderCardList() {
   if (state.dsts.length === 0) {
     dstListEl.innerHTML = `<p class="empty-state">No DSTs added yet. Pick a category above and click "+ Add DST" to start building a portfolio.</p>`;
@@ -1056,14 +1207,18 @@ function renderCardList() {
   dstListEl.innerHTML = state.dsts.map(dst => {
     const def = CATEGORY_DEFAULTS[dst.category];
     return `
-    <div class="dst-card" data-id="${dst.id}">
+    <div class="dst-card${dst.collapsed ? " collapsed" : ""}" data-id="${dst.id}">
       <div class="dst-card-head">
+        <button class="collapse-btn" data-action="toggle-collapse" data-id="${dst.id}" type="button" aria-label="${dst.collapsed ? "Expand" : "Collapse"} this DST" title="${dst.collapsed ? "Expand" : "Collapse"}">${svgIcon("chevronDown", 18)}</button>
         ${catBadgeHTML(def, 26)}
         <span class="cat-name">${def.label}</span>
         <span class="spacer"></span>
         <button class="ghost" data-action="duplicate" data-id="${dst.id}" type="button" title="Duplicate this DST">Duplicate</button>
         <button class="ghost" data-action="remove" data-id="${dst.id}" type="button" title="Remove this DST">Remove</button>
       </div>
+      ${dst.collapsed ? `
+      <div class="dst-card-summary">${dstSummaryHTML(dst)}</div>
+      ` : `
       <div class="dst-grid">
         ${numberFieldHTML({
           id: `amt-${dst.id}`, label: "Allocated amount", value: dst.amount,
@@ -1090,12 +1245,26 @@ function renderCardList() {
           <div class="bellcurve-holder" data-holder="years" data-id="${dst.id}">${bellCurveSVG(dst.years, 280, 64, def.colorVar)}</div>
         </div>
       </div>
+      `}
     </div>`;
   }).join("");
+
+  // The min-investment warning has to be inserted after the amount field's
+  // markup exists (numberFieldHTML doesn't know about DST-specific
+  // concerns like this), so it's appended here rather than folded into the
+  // template above.
+  state.dsts.forEach(dst => {
+    if (dst.collapsed) return;
+    const belowMin = dst.amount > 0 && dst.amount < MIN_DST_INVESTMENT;
+    if (!belowMin) return;
+    const amountField = dstListEl.querySelector(`.dst-card[data-id="${dst.id}"] input[data-field="amount"]`)?.closest(".field");
+    if (amountField) amountField.insertAdjacentHTML("beforeend", `<p class="min-warning">Below typical ${fmtUSD.format(MIN_DST_INVESTMENT)} DST minimum</p>`);
+  });
 }
 
 function renderResults() {
-  const portfolio = computePortfolio(state.dsts, state.fiduciary);
+  const totalFeePct = state.upfrontFeeRate + state.placementFeeRate;
+  const portfolio = computePortfolio(state.dsts, state.fiduciary, totalFeePct);
 
   // Stat tiles
   const tiles = [
@@ -1114,9 +1283,12 @@ function renderResults() {
       ${t.sub ? `<div class="sub">${t.sub}</div>` : ""}
     </div>`).join("");
 
-  // Breakdown table
+  // Breakdown table. Cash flow's $/yr and $/mo share one column (two lines)
+  // rather than two columns, so the table needs less horizontal scroll on a
+  // typical recording-width viewport.
+  const cfCell = (annual, monthly) => `<td class="cf-cell">${fmtUSD.format(annual)}<span class="cf-mo">${fmtUSD.format(monthly)}/mo</span></td>`;
   if (portfolio.rows.length === 0) {
-    breakdownBodyEl.innerHTML = `<tr><td colspan="10" style="text-align:center; color:var(--text-muted); padding:16px;">Add a DST to see the breakdown.</td></tr>`;
+    breakdownBodyEl.innerHTML = `<tr><td colspan="9" style="text-align:center; color:var(--text-muted); padding:16px;">Add a DST to see the breakdown.</td></tr>`;
   } else {
     breakdownBodyEl.innerHTML = portfolio.rows.map(r => {
       const def = CATEGORY_DEFAULTS[r.dst.category];
@@ -1127,8 +1299,7 @@ function renderResults() {
         <td>${fmtUSD.format(r.feesPaid)}</td>
         <td>${r.dst.leverage}%</td>
         <td>${r.dst.years}</td>
-        <td>${fmtUSD.format(r.annualCashFlow)}</td>
-        <td>${fmtUSD.format(r.monthlyCashFlow)}</td>
+        ${cfCell(r.annualCashFlow, r.monthlyCashFlow)}
         <td>${fmtUSD.format(r.appreciationGain)}</td>
         <td>${fmtUSD.format(r.totalProfit)}</td>
         <td>${fmtPct(r.annualizedReturn)}</td>
@@ -1140,8 +1311,7 @@ function renderResults() {
         <td>${fmtUSD.format(portfolio.totalFees)}</td>
         <td>&mdash;</td>
         <td>${portfolio.weightedYears.toFixed(1)}</td>
-        <td>${fmtUSD.format(portfolio.totalAnnualCashFlow)}</td>
-        <td>${fmtUSD.format(portfolio.totalMonthlyCashFlow)}</td>
+        ${cfCell(portfolio.totalAnnualCashFlow, portfolio.totalMonthlyCashFlow)}
         <td>${fmtUSD.format(portfolio.totalAppreciation)}</td>
         <td>${fmtUSD.format(portfolio.totalProfit)}</td>
         <td>${fmtPct(portfolio.blendedAnnualizedReturn)}</td>
@@ -1149,19 +1319,49 @@ function renderResults() {
   }
 
   renderAllocationBanner();
-  renderBootBanner();
+  renderBootBanner(portfolio);
   renderGainMix(portfolio);
 
-  if (mcToggleEl.checked) renderMonteCarlo();
+  if (mcToggleEl.checked) renderMonteCarlo(totalFeePct);
 }
 
-function renderBootBanner() {
-  const { boot, tax, netCash } = computeBoot(state.totalProceeds, state.dsts, state.capGainsRate);
-  bootBannerEl.classList.toggle("hidden", boot <= 0);
-  if (boot <= 0) return;
-  bootAmountEl.textContent = fmtUSD.format(boot);
-  bootTaxEl.textContent = fmtUSD.format(tax);
-  bootNetEl.textContent = fmtUSD.format(netCash);
+function renderBootBanner(portfolio) {
+  const opts = {
+    capGainsRatePct: state.capGainsRate,
+    advancedTax: state.advancedTax,
+    accumulatedDepreciation: state.accumulatedDepreciation,
+    depRecaptureRatePct: state.depRecaptureRate,
+    relinquishedDebt: state.relinquishedDebt,
+  };
+  const boot = computeBoot(state.totalProceeds, state.dsts, portfolio.rows, opts);
+
+  bootBannerEl.classList.toggle("hidden", boot.totalBoot <= 0);
+  bootBannerEl.classList.toggle("warn", boot.netCash < 0);
+  if (boot.totalBoot > 0) {
+    bootAmountEl.textContent = fmtUSD.format(boot.cashBoot);
+    bootTaxEl.textContent = fmtUSD.format(boot.tax);
+    bootNetEl.classList.toggle("negative", boot.netCash < 0);
+    bootNetEl.textContent = fmtUSD.format(boot.netCash);
+  }
+
+  // Detailed breakdown only makes sense once Advanced is on -- it restates
+  // the simple banner above with the debt-relief and recapture/capital-gain
+  // split spelled out.
+  if (!state.advancedTax) {
+    bootDetailEl.innerHTML = "";
+    return;
+  }
+  if (boot.totalBoot <= 0) {
+    bootDetailEl.innerHTML = `<span>No taxable boot with these inputs.</span>`;
+    return;
+  }
+  bootDetailEl.innerHTML = `
+    <span>Cash boot <strong>${fmtUSD.format(boot.cashBoot)}</strong></span>
+    <span>Debt-relief boot <strong>${fmtUSD.format(boot.debtReliefBoot)}</strong></span>
+    <span>Total taxable boot <strong>${fmtUSD.format(boot.totalBoot)}</strong></span>
+    <span>Depreciation recapture tax (@${state.depRecaptureRate}%) <strong>${fmtUSD.format(boot.recaptureTax)}</strong></span>
+    <span>Capital gains tax (@${state.capGainsRate}%) <strong>${fmtUSD.format(boot.capGainTax)}</strong></span>
+    <span>Total tax <strong>${fmtUSD.format(boot.tax)}</strong></span>`;
 }
 
 // "Where the gains come from": cash flow vs. appreciation, as a share of
@@ -1205,13 +1405,13 @@ function renderGainMix(portfolio) {
     <p class="gain-caption">${caption}</p>`;
 }
 
-function renderMonteCarlo() {
+function renderMonteCarlo(totalFeePct) {
   if (state.dsts.length === 0) {
     mcChartWrapEl.innerHTML = "";
     mcStatsEl.innerHTML = `<span>Add at least one DST to run a simulation.</span>`;
     return;
   }
-  const result = runMonteCarlo(state.dsts, MC_ITERATIONS, state.fiduciary);
+  const result = runMonteCarlo(state.dsts, MC_ITERATIONS, state.fiduciary, totalFeePct);
   mcChartWrapEl.innerHTML = histogramSVG(result.returns, [
     { value: result.returnP10, label: "P10" },
     { value: result.returnP50, label: "P50" },
@@ -1225,14 +1425,17 @@ function renderMonteCarlo() {
 }
 
 function updateFiduciaryHint() {
-  const totalFeePct = NON_FIDUCIARY_UPFRONT_FEE_PCT + NON_FIDUCIARY_PLACEMENT_FEE_PCT;
+  const totalFeePct = state.upfrontFeeRate + state.placementFeeRate;
   fiduciaryHintEl.textContent = state.fiduciary
     ? "No upfront or placement fees applied."
-    : `A ${NON_FIDUCIARY_UPFRONT_FEE_PCT}% upfront fee + ${NON_FIDUCIARY_PLACEMENT_FEE_PCT}% placement fee (${totalFeePct.toFixed(1)}% total) is deducted from each DST before it's invested.`;
+    : `A ${state.upfrontFeeRate}% upfront fee + ${state.placementFeeRate}% placement fee (${totalFeePct.toFixed(1)}% total) is deducted from each DST before it's invested.`;
   // Handshake icon appears only while acting as a fiduciary -- it's the
   // "no conflict of interest" signal, so it has nothing to say in the
   // commission/fee state.
   fiduciaryIconEl.innerHTML = state.fiduciary ? svgIcon("handshake", 18) : "";
+  // The editable fee-rate fields only matter (and only make sense to show)
+  // while acting in a commission/fee capacity.
+  feeRatesPanelEl.classList.toggle("visible", !state.fiduciary);
 }
 
 /* ----------------------------------------------------------------------------
@@ -1263,11 +1466,64 @@ capGainsRateEl.addEventListener("input", (e) => {
 
 mcToggleEl.addEventListener("change", () => {
   mcPanelEl.classList.toggle("visible", mcToggleEl.checked);
-  if (mcToggleEl.checked) renderMonteCarlo();
+  if (mcToggleEl.checked) renderMonteCarlo(state.upfrontFeeRate + state.placementFeeRate);
 });
 
 fiduciaryToggleEl.addEventListener("change", () => {
   state.fiduciary = fiduciaryToggleEl.checked;
+  updateFiduciaryHint();
+  renderResults();
+});
+
+expandAllBtnEl.addEventListener("click", () => {
+  state.dsts.forEach(d => { d.collapsed = false; });
+  renderCardList();
+});
+collapseAllBtnEl.addEventListener("click", () => {
+  state.dsts.forEach(d => { d.collapsed = true; });
+  renderCardList();
+});
+
+advTaxToggleEl.addEventListener("change", () => {
+  state.advancedTax = advTaxToggleEl.checked;
+  advTaxPanelEl.classList.toggle("visible", state.advancedTax);
+  renderResults();
+});
+
+// The advanced-tax fields (accumulated depreciation, recapture rate,
+// relinquished debt) and the non-fiduciary fee-rate fields are each a
+// fixed, non-repeating set -- built once via numberFieldHTML() at init
+// (same helper the per-DST cards use) rather than duplicating markup by
+// hand, then wired up like any other field below.
+advTaxFieldsWrapEl.innerHTML = `
+  <div class="adv-tax-fields">
+    ${numberFieldHTML({ id: "accumDepreciation", label: "Accumulated depreciation", value: state.accumulatedDepreciation, min: 0, max: 100000000, step: 10000, prefix: "$" })}
+    ${numberFieldHTML({ id: "depRecaptureRate", label: "Recapture rate", value: state.depRecaptureRate, min: 0, max: 100, step: 1, suffix: "%" })}
+    ${numberFieldHTML({ id: "relinquishedDebt", label: "Debt on relinquished property", value: state.relinquishedDebt, min: 0, max: 100000000, step: 10000, prefix: "$" })}
+  </div>`;
+document.getElementById("accumDepreciation").addEventListener("input", (e) => {
+  state.accumulatedDepreciation = Math.max(0, Number(e.target.value) || 0);
+  renderResults();
+});
+document.getElementById("depRecaptureRate").addEventListener("input", (e) => {
+  state.depRecaptureRate = Math.max(0, Number(e.target.value) || 0);
+  renderResults();
+});
+document.getElementById("relinquishedDebt").addEventListener("input", (e) => {
+  state.relinquishedDebt = Math.max(0, Number(e.target.value) || 0);
+  renderResults();
+});
+
+feeRatesFieldsWrapEl.innerHTML = `
+  ${numberFieldHTML({ id: "upfrontFeeRate", label: "Upfront fee", value: state.upfrontFeeRate, min: 0, max: 100, step: 0.5, suffix: "%" })}
+  ${numberFieldHTML({ id: "placementFeeRate", label: "Placement fee", value: state.placementFeeRate, min: 0, max: 100, step: 0.5, suffix: "%" })}`;
+document.getElementById("upfrontFeeRate").addEventListener("input", (e) => {
+  state.upfrontFeeRate = Math.max(0, Number(e.target.value) || 0);
+  updateFiduciaryHint();
+  renderResults();
+});
+document.getElementById("placementFeeRate").addEventListener("input", (e) => {
+  state.placementFeeRate = Math.max(0, Number(e.target.value) || 0);
   updateFiduciaryHint();
   renderResults();
 });
@@ -1288,6 +1544,12 @@ dstListEl.addEventListener("click", (e) => {
       state.dsts.push({ ...original, id: nextId++ });
       renderCardList();
       renderResults();
+    }
+  } else if (btn.dataset.action === "toggle-collapse") {
+    const dst = state.dsts.find(d => d.id === id);
+    if (dst) {
+      dst.collapsed = !dst.collapsed;
+      renderCardList();
     }
   }
 });
@@ -1313,6 +1575,19 @@ dstListEl.addEventListener("input", (e) => {
     if (readout) readout.textContent = dst.years;
     const holder = dstListEl.querySelector(`[data-holder="years"][data-id="${id}"]`);
     if (holder) holder.innerHTML = bellCurveSVG(dst.years, 280, 64, CATEGORY_DEFAULTS[dst.category].colorVar);
+  }
+  // Below-minimum warning has to be patched live too (typing shouldn't
+  // require a full card rebuild, which would drop focus mid-keystroke --
+  // same reasoning as the readouts above).
+  if (field === "amount") {
+    const fieldDiv = el.closest(".field");
+    const existingWarning = fieldDiv.querySelector(".min-warning");
+    const belowMin = dst.amount > 0 && dst.amount < MIN_DST_INVESTMENT;
+    if (belowMin && !existingWarning) {
+      fieldDiv.insertAdjacentHTML("beforeend", `<p class="min-warning">Below typical ${fmtUSD.format(MIN_DST_INVESTMENT)} DST minimum</p>`);
+    } else if (!belowMin && existingWarning) {
+      existingWarning.remove();
+    }
   }
 
   renderResults();
