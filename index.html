@@ -954,7 +954,7 @@ function renderCardList() {
         })}
         <div class="field">
           <label class="field-label">Leverage: <span data-readout="leverage" data-id="${dst.id}">${dst.leverage}%</span></label>
-          <input type="range" min="0" max="70" step="5" data-field="leverage" data-id="${dst.id}" value="${dst.leverage}">
+          <input type="range" min="0" max="70" step="1" data-field="leverage" data-id="${dst.id}" value="${dst.leverage}">
         </div>
         ${numberFieldHTML({
           id: `appr-${dst.id}`, label: "Appreciation rate", value: dst.appreciation,
