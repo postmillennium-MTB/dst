@@ -301,6 +301,14 @@ input[type="range"] {
 /* ---- Below-minimum DST allocation warning ---------------------------------- */
 .min-warning { font-size: 0.78rem; color: var(--warning-text); margin-top: 4px; }
 
+/* ---- Fields locked at a fixed value (e.g. Zero Coupon DST's 0% CoC) ------- */
+.field-note { font-size: 0.78rem; color: var(--text-muted); margin-top: 4px; }
+.stepper-field input[type="number"]:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
 /* ---- Non-fiduciary editable fee rates -------------------------------------- */
 #feeRatesPanel { margin-top: 14px; display: none; }
 #feeRatesPanel.visible { display: block; }
@@ -802,10 +810,12 @@ const CATEGORY_DEFAULTS = {
   medicaloffice:  { label: "Medical Office",  cashOnCash: 5.75, leverage: 35, appreciation: 2.25, colorVar: "--cat-medicaloffice",  icon: "stethoscope",   light: false, leverageMin: 0,  leverageMax: 70 },
   retail:         { label: "Retail",          cashOnCash: 6.00, leverage: 40, appreciation: 2.50, colorVar: "--cat-retail",         icon: "store",         light: false, leverageMin: 0,  leverageMax: 70 },
   // Zero coupon: no regular distributions -- all net operating income
-  // services the (large) debt instead, so cash-on-cash defaults to 0%.
-  // Structurally much higher leverage than a typical DST, often used to
-  // replace a large amount of relinquished-property debt in an exchange.
-  zerocoupon:     { label: "Zero Coupon DST",  cashOnCash: 0.00, leverage: 75, appreciation: 3.00, colorVar: "--cat-zerocoupon",     icon: "landmark",      light: false, leverageMin: 60, leverageMax: 90 },
+  // services the (large) debt instead, so cash-on-cash is fixed at 0%, not
+  // just defaulted there (lockCashOnCash disables the field entirely; see
+  // renderCardList). Structurally much higher leverage than a typical DST,
+  // often used to replace a large amount of relinquished-property debt in
+  // an exchange.
+  zerocoupon:     { label: "Zero Coupon DST",  cashOnCash: 0.00, leverage: 75, appreciation: 3.00, colorVar: "--cat-zerocoupon",     icon: "landmark",      light: false, leverageMin: 60, leverageMax: 90, lockCashOnCash: true },
 };
 
 // Illustrative shape of DST holding periods: 6-7 years is the fat middle of
@@ -1128,8 +1138,12 @@ function catBadgeHTML(def, size = 26) {
 // Renders a labeled number input with a currency/unit affix and a custom
 // up/down stepper (see .stepper-field / .stepper-btn in <style>). `extraAttrs`
 // carries the data-field/data-id pair the per-DST input listener keys off of;
-// left blank for the standalone total-proceeds field.
-function numberFieldHTML({ id, label, value, min, max, step, prefix, suffix, extraAttrs = "" }) {
+// left blank for the standalone total-proceeds field. `disabled` locks the
+// field at its given `value` -- no stepper, no typing -- for cases like
+// Zero Coupon DST's fixed 0% cash-on-cash, where the number isn't a
+// starting default but a defining trait of the category; `note` renders a
+// small caption explaining why underneath.
+function numberFieldHTML({ id, label, value, min, max, step, prefix, suffix, extraAttrs = "", disabled = false, note = "" }) {
   const padLeft = prefix ? 24 : 10;
   const padRight = suffix ? 76 : 38;
   return `
@@ -1137,14 +1151,16 @@ function numberFieldHTML({ id, label, value, min, max, step, prefix, suffix, ext
       <label class="field-label" for="${id}">${label}</label>
       <div class="stepper-field">
         ${prefix ? `<span class="field-affix prefix">${prefix}</span>` : ""}
-        <input type="number" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}" ${extraAttrs}
+        <input type="number" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}" ${extraAttrs} ${disabled ? "disabled" : ""}
           style="padding-left:${padLeft}px; padding-right:${padRight}px;">
         ${suffix ? `<span class="field-affix suffix">${suffix}</span>` : ""}
+        ${disabled ? "" : `
         <div class="stepper-btns">
           <button type="button" class="stepper-btn" data-step="up" data-target="${id}" aria-label="Increase ${label}">${svgIcon("up", 13)}</button>
           <button type="button" class="stepper-btn" data-step="down" data-target="${id}" aria-label="Decrease ${label}">${svgIcon("down", 13)}</button>
-        </div>
+        </div>`}
       </div>
+      ${note ? `<p class="field-note">${note}</p>` : ""}
     </div>`;
 }
 
@@ -1351,6 +1367,8 @@ function renderCardList() {
           id: `coc-${dst.id}`, label: "Cash-on-cash return", value: dst.cashOnCash,
           min: 0, max: 30, step: 0.1, suffix: "%/yr",
           extraAttrs: `data-field="cashOnCash" data-id="${dst.id}"`,
+          disabled: !!def.lockCashOnCash,
+          note: def.lockCashOnCash ? "Fixed at 0% -- zero coupon DSTs pay no regular distributions." : "",
         })}
         <div class="field">
           <label class="field-label">Leverage: <span data-readout="leverage" data-id="${dst.id}">${dst.leverage}%</span></label>
