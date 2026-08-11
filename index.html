@@ -46,6 +46,14 @@
   --cat-retail:         #e34948; /* red     */
 
   --good-text: #006300; /* profit / positive figures */
+
+  /* Two-slice "where the gains come from" donut (cash flow vs. appreciation).
+     Deliberately its own pair, not borrowed from the DST category colors
+     above -- this chart's categories (income type) are a different
+     dimension than a DST's property category, so reusing a category hue
+     here would misleadingly suggest a link between the two. */
+  --chart-cashflow:     var(--accent);
+  --chart-appreciation: #c9720f;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -223,6 +231,24 @@ input[type="range"] {
 .alloc-banner.over .alloc-bar-fill { background: #c22; }
 .alloc-banner.over strong.remaining { color: #c22; }
 
+/* ---- Boot (cash taken out of the exchange) ------------------------------- */
+.boot-row { margin-top: 14px; }
+.boot-row .field { max-width: 180px; flex: 1 1 160px; }
+.boot-banner {
+  flex: 2 1 320px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--surface-inset);
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+}
+.boot-banner strong { color: var(--text-primary); }
+.boot-banner.hidden { display: none; }
+
 /* ---- Add-DST controls ---------------------------------------------------- */
 .add-row {
   display: flex;
@@ -322,6 +348,23 @@ table.breakdown .cat-badge svg { width: 11px; height: 11px; }
 .stat-tile .value { font-size: 1.35rem; font-weight: 700; margin-top: 4px; }
 .stat-tile .value.good { color: var(--good-text); }
 .stat-tile .sub { font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px; }
+
+/* ---- "Where the gains come from" donut + legend --------------------------- */
+.gain-mix {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.gain-mix .donut-wrap { flex-shrink: 0; }
+.gain-legend { display: flex; flex-direction: column; gap: 8px; }
+.gain-legend .row { display: flex; align-items: baseline; font-size: 0.9rem; gap: 8px; }
+.gain-legend .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; align-self: center; }
+.gain-legend .name { color: var(--text-primary); font-weight: 600; }
+.gain-legend .amt { color: var(--text-secondary); white-space: nowrap; }
+.gain-caption { font-size: 0.8rem; color: var(--text-muted); max-width: 62ch; margin-top: -6px; margin-bottom: 18px; }
+.gain-empty { color: var(--text-muted); font-size: 0.9rem; }
 
 table.breakdown {
   width: 100%;
@@ -431,6 +474,30 @@ footer.disclaimer {
         <span><strong class="remaining" id="allocRemaining">$0</strong> <span id="allocRemainingLabel">remaining</span></span>
       </div>
     </div>
+
+    <!-- "Boot": whatever's left unallocated (see allocBanner above) can
+         either keep being reinvested into more DSTs, or be deliberately
+         cashed out here -- in a real 1031 exchange, proceeds not rolled
+         into replacement property are boot and are taxable in the year
+         received, at capital gains rates. -->
+    <div class="proceeds-row boot-row">
+      <div class="field">
+        <label class="field-label" for="capGainsRate">Capital gains tax rate</label>
+        <div class="stepper-field">
+          <input type="number" id="capGainsRate" min="0" max="100" step="1" value="20" style="padding-left:10px; padding-right:76px;">
+          <span class="field-affix suffix">%</span>
+          <div class="stepper-btns">
+            <button type="button" class="stepper-btn" data-step="up" data-target="capGainsRate" aria-label="Increase capital gains tax rate"></button>
+            <button type="button" class="stepper-btn" data-step="down" data-target="capGainsRate" aria-label="Decrease capital gains tax rate"></button>
+          </div>
+        </div>
+      </div>
+      <div class="boot-banner hidden" id="bootBanner">
+        <span>Cash taken out (boot) <strong id="bootAmount">$0</strong></span>
+        <span>Est. capital gains tax <strong id="bootTax">$0</strong></span>
+        <span>You keep <strong id="bootNet">$0</strong></span>
+      </div>
+    </div>
   </section>
 
   <!-- ======================= DST ALLOCATIONS ======================= -->
@@ -452,6 +519,8 @@ footer.disclaimer {
     <p class="hint">Based on each DST's cash-on-cash return, leverage, appreciation rate, and assumed holding period.</p>
 
     <div class="stat-grid" id="statGrid"></div>
+
+    <div id="gainMixWrap"></div>
 
     <div class="table-scroll">
       <table class="breakdown">
@@ -591,6 +660,12 @@ const MC_ITERATIONS = 4000; // Monte Carlo draws per run -- plenty smooth, still
 const NON_FIDUCIARY_UPFRONT_FEE_PCT = 5.0;
 const NON_FIDUCIARY_PLACEMENT_FEE_PCT = 1.5;
 
+// Default capital gains rate assumed for "boot" -- 1031 exchange proceeds
+// that are cashed out instead of rolled into a DST. Just a starting point
+// for the editable "Capital gains tax rate" field; 20% is the top federal
+// long-term rate (state tax and the 3.8% NIIT surtax aren't modeled here).
+const DEFAULT_CAP_GAINS_RATE_PCT = 20;
+
 /* ----------------------------------------------------------------------------
    2. STATE
    `dsts` is the single source of truth for every DST card. Input elements
@@ -603,8 +678,24 @@ let nextId = 1;
 const state = {
   totalProceeds: 2000000,
   fiduciary: true, // no upfront/placement fees while true; see NON_FIDUCIARY_* above
+  capGainsRate: DEFAULT_CAP_GAINS_RATE_PCT, // applied to any boot (unallocated proceeds taken as cash)
   dsts: [], // { id, category, amount, cashOnCash, leverage, appreciation, years }
 };
+
+// Whatever's left of totalProceeds after allocating to DSTs is "boot" --
+// proceeds not rolled into replacement property, taxable as capital gain
+// in the year received. This is a simplified model: it assumes the full
+// boot amount is taxable gain, which is true whenever the investor's
+// total realized gain on the relinquished property is at least the boot
+// (the common case for an appreciated property) -- it doesn't track the
+// original cost basis, so it can't check that assumption itself.
+function computeBoot(totalProceeds, dsts, capGainsRatePct) {
+  const allocated = dsts.reduce((s, d) => s + d.amount, 0);
+  const boot = Math.max(totalProceeds - allocated, 0);
+  const tax = boot * (capGainsRatePct / 100);
+  const netCash = boot - tax;
+  return { boot, tax, netCash };
+}
 
 function makeDst(categoryKey) {
   const def = CATEGORY_DEFAULTS[categoryKey];
@@ -889,6 +980,32 @@ function histogramSVG(values, markers, width = 640, height = 180) {
     </svg>`;
 }
 
+// Simple two-(or-more)-slice donut, built from plain SVG circles rather than
+// hand-rolled arc paths: each segment is just a dashed stroke of the right
+// length around a shared circle, rotated to start at 12 o'clock. A small
+// fixed-px gap is trimmed from each segment so adjacent slices read as
+// distinct without needing a drawn border (same "surface gap" idea as the
+// rest of the tool's charts).
+function donutSVG(segments, size = 116, strokeWidth = 22) {
+  const total = segments.reduce((s, seg) => s + Math.max(seg.value, 0), 0);
+  const r = (size - strokeWidth) / 2;
+  const c = 2 * Math.PI * r;
+  const center = size / 2;
+  if (total <= 0) {
+    return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${center}" cy="${center}" r="${r}" fill="none" stroke="var(--gridline)" stroke-width="${strokeWidth}"></circle></svg>`;
+  }
+  const gapPx = segments.length > 1 ? 3 : 0;
+  let offset = 0;
+  const rings = segments.map(seg => {
+    const frac = Math.max(seg.value, 0) / total;
+    const len = Math.max(frac * c - gapPx, 0);
+    const dashoffset = -offset;
+    offset += frac * c;
+    return `<circle cx="${center}" cy="${center}" r="${r}" fill="none" stroke="var(${seg.colorVar})" stroke-width="${strokeWidth}" stroke-dasharray="${len} ${c - len}" stroke-dashoffset="${dashoffset}" transform="rotate(-90 ${center} ${center})"></circle>`;
+  }).join("");
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="Composition of investment gains">${rings}</svg>`;
+}
+
 /* ----------------------------------------------------------------------------
    8. RENDERING
    ---------------------------------------------------------------------------- */
@@ -907,12 +1024,18 @@ const mcToggleEl = document.getElementById("mcToggle");
 const fiduciaryToggleEl = document.getElementById("fiduciaryToggle");
 const fiduciaryHintEl = document.getElementById("fiduciaryHint");
 const fiduciaryIconEl = document.getElementById("fiduciaryIcon");
+const capGainsRateEl = document.getElementById("capGainsRate");
+const bootBannerEl = document.getElementById("bootBanner");
+const bootAmountEl = document.getElementById("bootAmount");
+const bootTaxEl = document.getElementById("bootTax");
+const bootNetEl = document.getElementById("bootNet");
+const gainMixWrapEl = document.getElementById("gainMixWrap");
 
-// Fill in the two stepper buttons' icons that live in static HTML (the
-// total-proceeds field) -- everything else gets its icons from
-// numberFieldHTML()/catBadgeHTML() at render time.
-document.querySelectorAll('#totalProceeds ~ .stepper-btns .stepper-btn[data-step="up"]').forEach(b => b.innerHTML = svgIcon("up", 13));
-document.querySelectorAll('#totalProceeds ~ .stepper-btns .stepper-btn[data-step="down"]').forEach(b => b.innerHTML = svgIcon("down", 13));
+// Fill in the stepper buttons' icons that live in static HTML (the
+// total-proceeds and capital-gains-rate fields) -- everything else gets
+// its icons from numberFieldHTML()/catBadgeHTML() at render time.
+document.querySelectorAll('.stepper-btn[data-target="totalProceeds"][data-step="up"], .stepper-btn[data-target="capGainsRate"][data-step="up"]').forEach(b => b.innerHTML = svgIcon("up", 13));
+document.querySelectorAll('.stepper-btn[data-target="totalProceeds"][data-step="down"], .stepper-btn[data-target="capGainsRate"][data-step="down"]').forEach(b => b.innerHTML = svgIcon("down", 13));
 
 function renderAllocationBanner() {
   const allocated = state.dsts.reduce((s, d) => s + d.amount, 0);
@@ -977,7 +1100,7 @@ function renderResults() {
   // Stat tiles
   const tiles = [
     { label: "Net equity invested", value: fmtUSD.format(portfolio.totalEquity) },
-    { label: "Fees paid", value: fmtUSD.format(portfolio.totalFees) },
+    { label: "Upfront/Placement Fees", value: fmtUSD.format(portfolio.totalFees) },
     { label: "Cash flow income", value: `${fmtUSD.format(portfolio.totalAnnualCashFlow)}/yr`, sub: `${fmtUSD.format(portfolio.totalMonthlyCashFlow)}/mo` },
     { label: "Appreciation gain", value: fmtUSD.format(portfolio.totalAppreciation) },
     { label: "Total profit", value: fmtUSD.format(portfolio.totalProfit), good: true },
@@ -1026,8 +1149,60 @@ function renderResults() {
   }
 
   renderAllocationBanner();
+  renderBootBanner();
+  renderGainMix(portfolio);
 
   if (mcToggleEl.checked) renderMonteCarlo();
+}
+
+function renderBootBanner() {
+  const { boot, tax, netCash } = computeBoot(state.totalProceeds, state.dsts, state.capGainsRate);
+  bootBannerEl.classList.toggle("hidden", boot <= 0);
+  if (boot <= 0) return;
+  bootAmountEl.textContent = fmtUSD.format(boot);
+  bootTaxEl.textContent = fmtUSD.format(tax);
+  bootNetEl.textContent = fmtUSD.format(netCash);
+}
+
+// "Where the gains come from": cash flow vs. appreciation, as a share of
+// their own sum (not of Total Profit -- see the caption text below for why
+// those two numbers aren't always the same one).
+function renderGainMix(portfolio) {
+  const cashFlow = portfolio.totalCashFlow;
+  const appreciation = portfolio.totalAppreciation;
+  const sum = cashFlow + appreciation;
+
+  if (sum <= 0) {
+    gainMixWrapEl.innerHTML = `<p class="gain-empty">Add a DST to see the mix of cash flow vs. appreciation.</p>`;
+    return;
+  }
+
+  const segments = [
+    { label: "Cash flow income", value: cashFlow, colorVar: "--chart-cashflow" },
+    { label: "Appreciation gain", value: appreciation, colorVar: "--chart-appreciation" },
+  ];
+
+  const legendRows = segments.map(seg => `
+    <div class="row">
+      <span class="dot" style="background:var(${seg.colorVar})"></span>
+      <span class="name">${seg.label}</span>
+      <span class="amt">${fmtUSD.format(seg.value)} (${fmtPct(seg.value / sum, 0)})</span>
+    </div>`).join("");
+
+  // Cash flow + appreciation = Total Profit only when there's no fee drag
+  // (Fiduciary on). A non-fiduciary fee is subtracted from that same sum to
+  // arrive at Total Profit, so the two figures part ways by exactly the fee.
+  const fees = portfolio.totalFees;
+  const caption = fees > 0.5
+    ? `Cash flow + appreciation = ${fmtUSD.format(sum)} — Total Profit is ${fmtUSD.format(portfolio.totalProfit)} after subtracting ${fmtUSD.format(fees)} in upfront/placement fees (switch to Fiduciary to remove that gap).`
+    : `Cash flow + appreciation = ${fmtUSD.format(sum)}, which equals Total Profit while Fiduciary is on (no fees to subtract).`;
+
+  gainMixWrapEl.innerHTML = `
+    <div class="gain-mix">
+      <div class="donut-wrap">${donutSVG(segments, 116, 22)}</div>
+      <div class="gain-legend">${legendRows}</div>
+    </div>
+    <p class="gain-caption">${caption}</p>`;
 }
 
 function renderMonteCarlo() {
@@ -1078,6 +1253,11 @@ document.getElementById("addDstBtn").addEventListener("click", () => {
 
 document.getElementById("totalProceeds").addEventListener("input", (e) => {
   state.totalProceeds = Math.max(0, Number(e.target.value) || 0);
+  renderResults();
+});
+
+capGainsRateEl.addEventListener("input", (e) => {
+  state.capGainsRate = Math.max(0, Number(e.target.value) || 0);
   renderResults();
 });
 
