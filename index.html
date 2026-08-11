@@ -9,56 +9,43 @@
 <style>
 /* ==========================================================================
    DESIGN TOKENS
-   Light palette is the source of truth; dark values are re-declared inside
-   the prefers-color-scheme block below (never define a color only there).
-   Swap the hex values here to re-theme the whole tool from one place.
+   Single high-contrast light theme (no dark mode) -- chosen deliberately so
+   the tool looks the same regardless of the recording device's OS setting,
+   and so text/number legibility is never in question on video. Swap the hex
+   values here to re-theme the whole tool from one place.
    ========================================================================== */
 :root {
   color-scheme: light;
-  --surface-page:   #f9f9f7;
-  --surface-card:   #fcfcfb;
-  --surface-inset:  #f3f2ee;
-  --text-primary:   #0b0b0b;
-  --text-secondary: #52514e;
-  --text-muted:     #898781;
-  --gridline:       #e1e0d9;
-  --axis:           #c3c2b7;
-  --border:         rgba(11,11,11,0.10);
-  --focus-ring:      #2a78d6;
+  --surface-page:   #eef1f4; /* page background, a hair darker than the cards so panels read as distinct */
+  --surface-card:   #ffffff;
+  --surface-inset:  #f2f4f6; /* input fields, DST cards */
+  --text-primary:   #14181d; /* ~19:1 on white */
+  --text-secondary: #40474f; /* ~10.5:1 on white */
+  --text-muted:     #63696f; /* ~6.2:1 on white -- still comfortably above the 4.5:1 body-text floor */
+  --gridline:       #e1e5e9;
+  --axis:           #aab1b9;
+  --border:         rgba(15,23,32,0.14);
+  --focus-ring:     #1f66c2;
 
-  /* Categorical identity colors (one per DST category). Keep this order —
-     it's the CVD-safe ordering; add new categories at the NEXT free slot,
-     never by inserting in the middle. */
-  --cat-multifamily: #2a78d6; /* blue   */
-  --cat-industrial:  #1baf7a; /* aqua   */
-  --cat-office:      #eb6834; /* orange */
-  --cat-selfstorage: #eda100; /* yellow */
+  /* Buttons/links/charts. Deliberately a step darker than the multifamily
+     category blue below so white button text clears 4.5:1 (the raw
+     categorical blue lands at ~4.4:1, just short). */
+  --accent: #1f66c2;
 
-  --good-text:  #006300; /* profit / positive figures */
-  --accent:     #2a78d6; /* charts, primary buttons */
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --surface-page:   #0d0d0d;
-    --surface-card:   #1a1a19;
-    --surface-inset:  #222221;
-    --text-primary:   #ffffff;
-    --text-secondary: #c3c2b7;
-    --text-muted:     #898781;
-    --gridline:       #2c2c2a;
-    --axis:           #383835;
-    --border:         rgba(255,255,255,0.10);
-    --focus-ring:     #3987e5;
+  /* Categorical identity colors (one per DST category). Keep this order --
+     it's the CVD-safe ordering from the palette this was built against.
+     Add new categories at the NEXT free slot, never by inserting in the
+     middle or reordering existing ones. */
+  --cat-multifamily:    #2a78d6; /* blue    */
+  --cat-industrial:     #1baf7a; /* aqua    */
+  --cat-office:         #eb6834; /* orange  */
+  --cat-selfstorage:    #eda100; /* yellow  */
+  --cat-seniorliving:   #e87ba4; /* magenta */
+  --cat-studenthousing: #008300; /* green   */
+  --cat-medicaloffice:  #4a3aa7; /* violet  */
+  --cat-retail:         #e34948; /* red     */
 
-    --cat-multifamily: #3987e5;
-    --cat-industrial:  #199e70;
-    --cat-office:      #d95926;
-    --cat-selfstorage: #c98500;
-
-    --good-text: #0ca30c;
-    --accent:    #3987e5;
-  }
+  --good-text: #006300; /* profit / positive figures */
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -73,7 +60,7 @@ html, body {
 body { padding: 32px 20px 64px; }
 
 .page {
-  max-width: 900px;
+  max-width: 920px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -136,16 +123,69 @@ input[type="range"] {
   accent-color: var(--accent);
 }
 .field { display: flex; flex-direction: column; gap: 2px; }
-.field-suffix-wrap { position: relative; }
-.field-suffix {
+
+/* Number fields with a custom up/down stepper (replaces the browser's tiny
+   native spinner arrows, which are hard to see/target). The input reserves
+   padding on the left (for a currency prefix) and right (for a unit suffix
+   plus the stepper column); see numberFieldHTML() in the script below. */
+.stepper-field { position: relative; }
+.stepper-field input[type="number"] {
+  padding-top: 11px;
+  padding-bottom: 11px;
+  /* Hide native spinner arrows -- we render our own, bigger ones instead. */
+  -moz-appearance: textfield;
+}
+.stepper-field input[type="number"]::-webkit-outer-spin-button,
+.stepper-field input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.field-affix {
   position: absolute;
-  right: 10px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--text-muted);
   font-size: 0.85rem;
   pointer-events: none;
 }
+.field-affix.prefix { left: 10px; }
+.field-affix.suffix { right: 38px; }
+.stepper-btns {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  bottom: 3px;
+  width: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stepper-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.stepper-btn svg { width: 13px; height: 13px; display: block; }
+.stepper-btn:hover { background: var(--surface-page); color: var(--text-primary); }
+.stepper-btn:active { transform: scale(0.94); }
+
+/* Touch devices get a noticeably bigger stepper + switch + slider hit area.
+   Detected via JS (pointer: coarse), not just viewport width -- a narrow
+   desktop window shouldn't get touch-sized targets, and a large tablet
+   should, regardless of how wide its screen is. See isTouchDevice below. */
+.is-touch .stepper-field input[type="number"] { padding-top: 14px; padding-bottom: 14px; }
+.is-touch .stepper-btns { width: 34px; }
+.is-touch .stepper-btn svg { width: 16px; height: 16px; }
+.is-touch input[type="range"] { height: 30px; }
+.is-touch button.ghost { padding: 10px 12px; }
 
 /* ---- Top-level proceeds + allocation banner ----------------------------- */
 .proceeds-row {
@@ -180,8 +220,8 @@ input[type="range"] {
   border-radius: 4px;
   transition: width 0.15s ease;
 }
-.alloc-banner.over .alloc-bar-fill { background: #d03b3b; }
-.alloc-banner.over strong.remaining { color: #d03b3b; }
+.alloc-banner.over .alloc-bar-fill { background: #c22; }
+.alloc-banner.over strong.remaining { color: #c22; }
 
 /* ---- Add-DST controls ---------------------------------------------------- */
 .add-row {
@@ -217,6 +257,25 @@ button.ghost {
 button.ghost:hover { color: var(--text-primary); }
 button:hover { filter: brightness(1.05); }
 
+/* ---- Category icon badge -------------------------------------------------- */
+/* Colored circle + Lucide icon used everywhere a DST's category needs to be
+   identified (card header, breakdown table). Icon ink flips to dark on the
+   three category colors light enough that white fails 3:1 contrast
+   (computed, not eyeballed -- see CATEGORY_DEFAULTS `light` flag below). */
+.cat-badge {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1.5px solid rgba(0,0,0,0.15);
+}
+.cat-badge svg { width: 14px; height: 14px; display: block; }
+table.breakdown .cat-badge { width: 20px; height: 20px; }
+table.breakdown .cat-badge svg { width: 11px; height: 11px; }
+
 /* ---- DST cards ------------------------------------------------------------ */
 #dstList { display: flex; flex-direction: column; gap: 14px; margin-top: 16px; }
 .dst-card {
@@ -228,10 +287,9 @@ button:hover { filter: brightness(1.05); }
 .dst-card-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 14px;
 }
-.cat-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .dst-card-head .cat-name { font-weight: 700; font-size: 0.95rem; }
 .dst-card-head .spacer { flex: 1; }
 .dst-grid {
@@ -241,12 +299,6 @@ button:hover { filter: brightness(1.05); }
   align-items: start;
 }
 .years-field { grid-column: span 2; min-width: 260px; }
-.years-readout {
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-  margin-top: 4px;
-}
-.years-readout strong { color: var(--text-primary); }
 .bellcurve-svg { display: block; margin-top: 6px; }
 .empty-state {
   color: var(--text-muted);
@@ -311,6 +363,21 @@ tr.total-row td { font-weight: 700; border-top: 2px solid var(--axis); border-bo
 .mc-stats { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 14px; font-size: 0.88rem; color: var(--text-secondary); }
 .mc-stats b { color: var(--text-primary); }
 
+/* ---- Fiduciary switch ------------------------------------------------------ */
+.switch-row { display: flex; align-items: center; gap: 12px; cursor: pointer; user-select: none; }
+.switch { position: relative; display: inline-block; width: 44px; height: 26px; flex-shrink: 0; }
+.switch input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.switch-track { position: absolute; inset: 0; background: var(--axis); border-radius: 999px; transition: background 0.15s ease; pointer-events: none; }
+.switch-thumb { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.3); transition: transform 0.15s ease; }
+.switch input:checked ~ .switch-track { background: var(--accent); }
+.switch input:checked ~ .switch-track .switch-thumb { transform: translateX(18px); }
+.switch input:focus-visible ~ .switch-track { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.switch-text strong { font-size: 0.95rem; }
+.switch-text .hint { display: block; font-size: 0.82rem; color: var(--text-secondary); margin-top: 2px; }
+.is-touch .switch { width: 50px; height: 30px; }
+.is-touch .switch-thumb { width: 24px; height: 24px; }
+.is-touch .switch input:checked ~ .switch-track .switch-thumb { transform: translateX(20px); }
+
 /* ---- Footer ----------------------------------------------------------------- */
 footer.disclaimer {
   font-size: 0.8rem;
@@ -346,9 +413,13 @@ footer.disclaimer {
     <div class="proceeds-row">
       <div class="field">
         <label class="field-label" for="totalProceeds">Total 1031 proceeds</label>
-        <div class="field-suffix-wrap">
-          <span class="field-suffix" style="left:10px; right:auto;">$</span>
-          <input type="number" id="totalProceeds" min="0" step="10000" value="2000000" style="padding-left:22px;">
+        <div class="stepper-field">
+          <span class="field-affix prefix">$</span>
+          <input type="number" id="totalProceeds" min="0" step="10000" value="2000000" style="padding-left:22px; padding-right:38px;">
+          <div class="stepper-btns">
+            <button type="button" class="stepper-btn" data-step="up" data-target="totalProceeds" aria-label="Increase total proceeds"></button>
+            <button type="button" class="stepper-btn" data-step="down" data-target="totalProceeds" aria-label="Decrease total proceeds"></button>
+          </div>
         </div>
       </div>
       <div class="alloc-banner" id="allocBanner">
@@ -384,7 +455,8 @@ footer.disclaimer {
         <thead>
           <tr>
             <th>DST</th>
-            <th>Equity</th>
+            <th>Allocated</th>
+            <th>Fees</th>
             <th>Leverage</th>
             <th>Hold (yrs)</th>
             <th>Cash flow income</th>
@@ -415,9 +487,23 @@ footer.disclaimer {
     </div>
   </section>
 
+  <!-- ======================= FIDUCIARY SWITCH ======================= -->
+  <section class="panel">
+    <label class="switch-row">
+      <span class="switch">
+        <input type="checkbox" id="fiduciaryToggle" checked>
+        <span class="switch-track"><span class="switch-thumb"></span></span>
+      </span>
+      <span class="switch-text">
+        <strong>Fiduciary</strong>
+        <span class="hint" id="fiduciaryHint"></span>
+      </span>
+    </label>
+  </section>
+
   <footer class="disclaimer">
     This tool is for illustrating how DST return mechanics work and is not investment advice.
-    It does not account for fees, taxes, distributions timing, or any specific offering —
+    It does not account for taxes, distribution timing, or any specific offering —
     consult a qualified advisor before making any investment decision.
   </footer>
 
@@ -430,21 +516,51 @@ footer.disclaimer {
    1031 DST PORTFOLIO CALCULATOR
    ----------------------------------------------------------------------------
    Single self-contained file, no external dependencies (no CDN, no build step).
-   Organized top to bottom as: config -> state -> math -> rendering -> charts
-   -> event wiring. Read in that order when picking this back up later.
+   Organized top to bottom as: icons -> config -> state -> math -> rendering
+   -> charts -> event wiring. Read in that order when picking this back up
+   later.
    ============================================================================ */
+
+/* ----------------------------------------------------------------------------
+   0. ICONS (inline SVG, Lucide path data, no external icon font/library)
+   Each entry is just the inner <path>/<circle> markup; svgIcon() wraps it in
+   a consistent <svg> shell. Add a new icon by dropping its path data in here
+   and referencing the key from CATEGORY_DEFAULTS.
+   ---------------------------------------------------------------------------- */
+const ICON_PATHS = {
+  home:          `<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>`,
+  factory:       `<path d="M12 16h.01"/><path d="M16 16h.01"/><path d="M3 19a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5a.5.5 0 0 0-.769-.422l-4.462 2.844A.5.5 0 0 1 15 10.5v-2a.5.5 0 0 0-.769-.422L9.77 10.922A.5.5 0 0 1 9 10.5V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2z"/><path d="M8 16h.01"/>`,
+  building:      `<path d="M10 12h4"/><path d="M10 8h4"/><path d="M14 21v-3a2 2 0 0 0-4 0v3"/><path d="M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2"/><path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"/>`,
+  warehouse:     `<path d="M18 21V10a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v11"/><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 1.132-1.803l7.95-3.974a2 2 0 0 1 1.837 0l7.948 3.974A2 2 0 0 1 22 8z"/><path d="M6 13h12"/><path d="M6 17h12"/>`,
+  armchair:      `<path d="M19 9V6a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v3"/><path d="M3 16a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5a2 2 0 0 0-4 0v1.5a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5V11a2 2 0 0 0-4 0z"/><path d="M5 18v2"/><path d="M19 18v2"/>`,
+  graduationCap: `<path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/>`,
+  stethoscope:   `<path d="M11 2v2"/><path d="M5 2v2"/><path d="M5 3H4a2 2 0 0 0-2 2v4a6 6 0 0 0 12 0V5a2 2 0 0 0-2-2h-1"/><path d="M8 15a6 6 0 0 0 12 0v-3"/><circle cx="20" cy="10" r="2"/>`,
+  store:         `<path d="M15 21v-5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v5"/><path d="M17.774 10.31a1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.451 0 1.12 1.12 0 0 0-1.548 0 2.5 2.5 0 0 1-3.452 0 1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.77-3.248l2.889-4.184A2 2 0 0 1 7 2h10a2 2 0 0 1 1.653.873l2.895 4.192a2.5 2.5 0 0 1-3.774 3.244"/><path d="M4 10.95V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.05"/>`,
+  up:            `<rect width="18" height="18" x="3" y="3" rx="2"/><path d="m16 12-4-4-4 4"/><path d="M12 16V8"/>`,
+  down:          `<path d="M9 5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6a1 1 0 0 0 1 1h3.293a.707.707 0 0 1 .5 1.207l-7.086 7.086a1 1 0 0 1-1.414 0l-7.086-7.086a.707.707 0 0 1 .5-1.207H8a1 1 0 0 0 1-1z"/>`,
+};
+function svgIcon(name, size = 16) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name] || ""}</svg>`;
+}
 
 /* ----------------------------------------------------------------------------
    1. CONFIG
    Adding a new property category is a one-line addition to CATEGORY_DEFAULTS.
-   The `color` should be the next unused --cat-* CSS variable to keep the
-   categorical color order stable (see :root in <style>).
+   `colorVar` should be the next unused --cat-* CSS variable to keep the
+   categorical color order stable (see :root in <style>). `light: true` marks
+   a fill color too light for a white icon to clear 3:1 contrast on top of it
+   (computed, not eyeballed) -- those get dark icon ink instead; see
+   catBadgeHTML() below.
    ---------------------------------------------------------------------------- */
 const CATEGORY_DEFAULTS = {
-  multifamily: { label: "Multifamily",   cashOnCash: 5.0, leverage: 45, appreciation: 3.0, colorVar: "--cat-multifamily" },
-  industrial:  { label: "Industrial",    cashOnCash: 6.0, leverage: 40, appreciation: 3.5, colorVar: "--cat-industrial"  },
-  office:      { label: "Office",        cashOnCash: 6.5, leverage: 35, appreciation: 2.0, colorVar: "--cat-office"     },
-  selfstorage: { label: "Self-Storage",  cashOnCash: 5.5, leverage: 30, appreciation: 3.0, colorVar: "--cat-selfstorage"},
+  multifamily:    { label: "Multifamily",     cashOnCash: 5.00, leverage: 45, appreciation: 3.00, colorVar: "--cat-multifamily",    icon: "home",          light: false },
+  industrial:     { label: "Industrial",      cashOnCash: 6.00, leverage: 40, appreciation: 3.50, colorVar: "--cat-industrial",     icon: "factory",       light: true  },
+  office:         { label: "Office",          cashOnCash: 6.50, leverage: 35, appreciation: 2.00, colorVar: "--cat-office",         icon: "building",      light: false },
+  selfstorage:    { label: "Self-Storage",    cashOnCash: 5.50, leverage: 30, appreciation: 3.00, colorVar: "--cat-selfstorage",    icon: "warehouse",     light: true  },
+  seniorliving:   { label: "Senior Living",   cashOnCash: 6.25, leverage: 40, appreciation: 2.50, colorVar: "--cat-seniorliving",   icon: "armchair",      light: true  },
+  studenthousing: { label: "Student Housing", cashOnCash: 6.00, leverage: 45, appreciation: 3.00, colorVar: "--cat-studenthousing", icon: "graduationCap", light: false },
+  medicaloffice:  { label: "Medical Office",  cashOnCash: 5.75, leverage: 35, appreciation: 2.25, colorVar: "--cat-medicaloffice",  icon: "stethoscope",   light: false },
+  retail:         { label: "Retail",          cashOnCash: 6.00, leverage: 40, appreciation: 2.50, colorVar: "--cat-retail",         icon: "store",         light: false },
 };
 
 // Illustrative shape of DST holding periods: 6-7 years is the fat middle of
@@ -461,6 +577,14 @@ const DEFAULT_HOLD_YEARS = 6.5; // the deterministic "expected" point estimate
 
 const MC_ITERATIONS = 4000; // Monte Carlo draws per run -- plenty smooth, still instant in-browser
 
+// Non-fiduciary (commission-based) DST offerings typically carry an upfront
+// selling commission plus a dealer-manager/placement fee, both deducted from
+// the capital before it's put to work. A fiduciary/fee-only structure has
+// neither. Toggled globally via the "Fiduciary" switch at the bottom of the
+// page -- tune these two constants to model a different fee schedule.
+const NON_FIDUCIARY_UPFRONT_FEE_PCT = 5.0;
+const NON_FIDUCIARY_PLACEMENT_FEE_PCT = 1.5;
+
 /* ----------------------------------------------------------------------------
    2. STATE
    `dsts` is the single source of truth for every DST card. Input elements
@@ -472,6 +596,7 @@ const MC_ITERATIONS = 4000; // Monte Carlo draws per run -- plenty smooth, still
 let nextId = 1;
 const state = {
   totalProceeds: 2000000,
+  fiduciary: true, // no upfront/placement fees while true; see NON_FIDUCIARY_* above
   dsts: [], // { id, category, amount, cashOnCash, leverage, appreciation, years }
 };
 
@@ -506,16 +631,26 @@ function makeDst(categoryKey) {
    sale, the algebra collapses nicely to:
        appreciationGain = leveragedValue * ((1 + appreciation%)^years - 1)
    i.e. the investor's dollar gain from appreciation scales with the
-   leveraged value, exactly as described in the tool's brief, regardless of
-   the debt payoff at sale (it cancels out).
+   leveraged value, regardless of the debt payoff at sale (it cancels out).
+
+   Fee model: `grossAmount` is what the investor actually commits from their
+   1031 proceeds. When not fiduciary, a combined upfront + placement fee is
+   taken off the top; only what's left (`equity`) is actually deployed and
+   earning cash flow / appreciation. Profit and annualized return are then
+   measured against `grossAmount` -- what the investor really gave up -- so
+   the fee shows up as a return drag, not just a footnote.
    ---------------------------------------------------------------------------- */
-function computeDst(dst) {
-  const equity = dst.amount;
+function computeDst(dst, fiduciary) {
+  const grossAmount = dst.amount;
+  const feeRate = fiduciary ? 0 : (NON_FIDUCIARY_UPFRONT_FEE_PCT + NON_FIDUCIARY_PLACEMENT_FEE_PCT) / 100;
+  const feesPaid = grossAmount * feeRate;
+  const equity = grossAmount - feesPaid; // net capital actually put to work
+
   const leverageMultiplier = 1 + dst.leverage / 100;
   const leveragedValue = equity * leverageMultiplier;
 
   // Cash flow distributions: simple (non-compounding) annual yield on the
-  // original equity, summed across the holding period. DST cash-on-cash
+  // net equity, summed across the holding period. DST cash-on-cash
   // distributions are paid out as income, not reinvested, so this is not
   // compounded -- a deliberate simplification, noted here for anyone
   // extending this later toward a reinvestment/DRIP mode.
@@ -525,44 +660,48 @@ function computeDst(dst) {
   const growthFactor = Math.pow(1 + dst.appreciation / 100, dst.years);
   const appreciationGain = leveragedValue * (growthFactor - 1);
 
-  const totalProfit = cashFlowIncome + appreciationGain;
-  const finalValue = equity + totalProfit; // equity returned + profit
-  const annualizedReturn = dst.years > 0 ? Math.pow(finalValue / equity, 1 / dst.years) - 1 : 0;
+  const finalValue = equity + cashFlowIncome + appreciationGain; // cash the investor actually receives back
+  const totalProfit = finalValue - grossAmount; // profit relative to what was originally committed (fee included as a drag)
+  const annualizedReturn = dst.years > 0 && grossAmount > 0 ? Math.pow(finalValue / grossAmount, 1 / dst.years) - 1 : 0;
 
-  return { equity, leveragedValue, cashFlowIncome, appreciationGain, totalProfit, finalValue, annualizedReturn };
+  return { grossAmount, feesPaid, equity, leveragedValue, cashFlowIncome, appreciationGain, totalProfit, finalValue, annualizedReturn };
 }
 
 // Blends the whole portfolio. Uses a dollar-weighted average holding period
-// to annualize the combined result -- an approximation (it doesn't model
-// the exact timing of each DST's individual cash flows / exit), but is
-// accurate for the totals and is clearly documented here if a true
-// multi-cashflow IRR is ever wanted instead.
-function computePortfolio(dsts) {
+// (weighted by gross amount committed) to annualize the combined result --
+// an approximation (it doesn't model the exact timing of each DST's
+// individual cash flows / exit), but is accurate for the totals and is
+// clearly documented here if a true multi-cashflow IRR is ever wanted
+// instead.
+function computePortfolio(dsts, fiduciary) {
   if (dsts.length === 0) {
-    return { totalEquity: 0, totalCashFlow: 0, totalAppreciation: 0, totalProfit: 0, totalFinalValue: 0, blendedAnnualizedReturn: 0, weightedYears: 0, rows: [] };
+    return { totalGross: 0, totalFees: 0, totalEquity: 0, totalCashFlow: 0, totalAppreciation: 0, totalProfit: 0, totalFinalValue: 0, blendedAnnualizedReturn: 0, weightedYears: 0, rows: [] };
   }
-  const rows = dsts.map(d => ({ dst: d, ...computeDst(d) }));
+  const rows = dsts.map(d => ({ dst: d, ...computeDst(d, fiduciary) }));
+  const totalGross = rows.reduce((s, r) => s + r.grossAmount, 0);
+  const totalFees = rows.reduce((s, r) => s + r.feesPaid, 0);
   const totalEquity = rows.reduce((s, r) => s + r.equity, 0);
   const totalCashFlow = rows.reduce((s, r) => s + r.cashFlowIncome, 0);
   const totalAppreciation = rows.reduce((s, r) => s + r.appreciationGain, 0);
-  const totalProfit = totalCashFlow + totalAppreciation;
-  const totalFinalValue = totalEquity + totalProfit;
-  const weightedYears = totalEquity > 0
-    ? rows.reduce((s, r) => s + r.equity * r.dst.years, 0) / totalEquity
+  const totalFinalValue = rows.reduce((s, r) => s + r.finalValue, 0);
+  const totalProfit = totalFinalValue - totalGross;
+  const weightedYears = totalGross > 0
+    ? rows.reduce((s, r) => s + r.grossAmount * r.dst.years, 0) / totalGross
     : 0;
-  const equityMultiple = totalEquity > 0 ? totalFinalValue / totalEquity : 0;
+  const equityMultiple = totalGross > 0 ? totalFinalValue / totalGross : 0;
   const blendedAnnualizedReturn = weightedYears > 0 ? Math.pow(equityMultiple, 1 / weightedYears) - 1 : 0;
 
-  return { totalEquity, totalCashFlow, totalAppreciation, totalProfit, totalFinalValue, blendedAnnualizedReturn, weightedYears, rows };
+  return { totalGross, totalFees, totalEquity, totalCashFlow, totalAppreciation, totalProfit, totalFinalValue, blendedAnnualizedReturn, weightedYears, rows };
 }
 
 /* ----------------------------------------------------------------------------
    4. MONTE CARLO (advanced / optional)
    Only the holding period is randomized, drawn from HOLD_PERIOD_WEIGHTS with
    a small jitter so the histogram isn't visibly bucketed into whole years.
-   Cash-on-cash and appreciation assumptions are held fixed per DST for each
-   draw. Structured so adding randomized CoC/appreciation later is a small
-   change: sample those inside the same loop before calling computeDst.
+   Cash-on-cash, appreciation, and the fiduciary fee setting are held fixed
+   per DST for each draw. Structured so adding randomized CoC/appreciation
+   later is a small change: sample those inside the same loop before calling
+   computeDst.
    ---------------------------------------------------------------------------- */
 function buildWeightedSampler(weights) {
   const years = Object.keys(weights).map(Number).sort((a, b) => a - b);
@@ -580,23 +719,23 @@ function buildWeightedSampler(weights) {
 }
 const sampleHoldYears = buildWeightedSampler(HOLD_PERIOD_WEIGHTS);
 
-function runMonteCarlo(dsts, iterations) {
+function runMonteCarlo(dsts, iterations, fiduciary) {
   const returns = [];
   const profits = [];
   for (let i = 0; i < iterations; i++) {
-    let totalEquity = 0, totalProfit = 0, weightedYearsSum = 0;
+    let totalGross = 0, totalFinal = 0, weightedYearsSum = 0;
     for (const d of dsts) {
       const draw = { ...d, years: sampleHoldYears() };
-      const r = computeDst(draw);
-      totalEquity += r.equity;
-      totalProfit += r.totalProfit;
-      weightedYearsSum += r.equity * draw.years;
+      const r = computeDst(draw, fiduciary);
+      totalGross += r.grossAmount;
+      totalFinal += r.finalValue;
+      weightedYearsSum += r.grossAmount * draw.years;
     }
-    const weightedYears = totalEquity > 0 ? weightedYearsSum / totalEquity : 0;
-    const equityMultiple = totalEquity > 0 ? (totalEquity + totalProfit) / totalEquity : 0;
+    const weightedYears = totalGross > 0 ? weightedYearsSum / totalGross : 0;
+    const equityMultiple = totalGross > 0 ? totalFinal / totalGross : 0;
     const annualized = weightedYears > 0 ? Math.pow(equityMultiple, 1 / weightedYears) - 1 : 0;
     returns.push(annualized);
-    profits.push(totalProfit);
+    profits.push(totalFinal - totalGross);
   }
   returns.sort((a, b) => a - b);
   profits.sort((a, b) => a - b);
@@ -616,7 +755,41 @@ const fmtUSDCompact = new Intl.NumberFormat("en-US", { style: "currency", curren
 const fmtPct = (x, digits = 1) => (x * 100).toFixed(digits) + "%";
 
 /* ----------------------------------------------------------------------------
-   6. CHARTS (inline SVG, no libraries)
+   6. SMALL MARKUP HELPERS
+   Reused wherever a category or a stepper-equipped number field is rendered,
+   so the two only need to be gotten right once.
+   ---------------------------------------------------------------------------- */
+function catBadgeHTML(def, size = 26) {
+  const ink = def.light ? "var(--text-primary)" : "#ffffff";
+  const iconSize = Math.round(size * 0.52);
+  return `<span class="cat-badge" style="width:${size}px; height:${size}px; background:var(${def.colorVar}); color:${ink};">${svgIcon(def.icon, iconSize)}</span>`;
+}
+
+// Renders a labeled number input with a currency/unit affix and a custom
+// up/down stepper (see .stepper-field / .stepper-btn in <style>). `extraAttrs`
+// carries the data-field/data-id pair the per-DST input listener keys off of;
+// left blank for the standalone total-proceeds field.
+function numberFieldHTML({ id, label, value, min, max, step, prefix, suffix, extraAttrs = "" }) {
+  const padLeft = prefix ? 24 : 10;
+  const padRight = suffix ? 76 : 38;
+  return `
+    <div class="field">
+      <label class="field-label" for="${id}">${label}</label>
+      <div class="stepper-field">
+        ${prefix ? `<span class="field-affix prefix">${prefix}</span>` : ""}
+        <input type="number" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}" ${extraAttrs}
+          style="padding-left:${padLeft}px; padding-right:${padRight}px;">
+        ${suffix ? `<span class="field-affix suffix">${suffix}</span>` : ""}
+        <div class="stepper-btns">
+          <button type="button" class="stepper-btn" data-step="up" data-target="${id}" aria-label="Increase ${label}">${svgIcon("up", 13)}</button>
+          <button type="button" class="stepper-btn" data-step="down" data-target="${id}" aria-label="Decrease ${label}">${svgIcon("down", 13)}</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ----------------------------------------------------------------------------
+   7. CHARTS (inline SVG, no libraries)
    Two small, purpose-built charts:
      - bellCurveSVG: the illustrative holding-period distribution, with a
        marker for the currently chosen holding period. Used once per DST card.
@@ -651,7 +824,7 @@ function bellCurveSVG(highlightYears, width = 280, height = 64, colorVar = "--ac
 
   return `
     <svg class="bellcurve-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Typical DST holding period distribution, ${highlightYears} years selected">
-      <path d="${areaPath}" fill="var(${colorVar})" opacity="0.12"></path>
+      <path d="${areaPath}" fill="var(${colorVar})" opacity="0.14"></path>
       <path d="${path}" fill="none" stroke="var(${colorVar})" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
       <line x1="${markerX}" y1="${padTop - 2}" x2="${markerX}" y2="${baseline}" stroke="var(--text-primary)" stroke-width="1.5"></line>
       ${years.map(y => `<text x="${xFor(y)}" y="${height - 3}" font-size="9" text-anchor="middle" fill="var(--text-muted)">${y}</text>`).join("")}
@@ -697,7 +870,7 @@ function histogramSVG(values, markers, width = 640, height = 180) {
 }
 
 /* ----------------------------------------------------------------------------
-   7. RENDERING
+   8. RENDERING
    ---------------------------------------------------------------------------- */
 const dstListEl = document.getElementById("dstList");
 const statGridEl = document.getElementById("statGrid");
@@ -711,6 +884,14 @@ const mcPanelEl = document.getElementById("mcPanel");
 const mcChartWrapEl = document.getElementById("mcChartWrap");
 const mcStatsEl = document.getElementById("mcStats");
 const mcToggleEl = document.getElementById("mcToggle");
+const fiduciaryToggleEl = document.getElementById("fiduciaryToggle");
+const fiduciaryHintEl = document.getElementById("fiduciaryHint");
+
+// Fill in the two stepper buttons' icons that live in static HTML (the
+// total-proceeds field) -- everything else gets its icons from
+// numberFieldHTML()/catBadgeHTML() at render time.
+document.querySelectorAll('#totalProceeds ~ .stepper-btns .stepper-btn[data-step="up"]').forEach(b => b.innerHTML = svgIcon("up", 13));
+document.querySelectorAll('#totalProceeds ~ .stepper-btns .stepper-btn[data-step="down"]').forEach(b => b.innerHTML = svgIcon("down", 13));
 
 function renderAllocationBanner() {
   const allocated = state.dsts.reduce((s, d) => s + d.amount, 0);
@@ -733,38 +914,32 @@ function renderCardList() {
     return `
     <div class="dst-card" data-id="${dst.id}">
       <div class="dst-card-head">
-        <span class="cat-dot" style="background:var(${def.colorVar})"></span>
+        ${catBadgeHTML(def, 26)}
         <span class="cat-name">${def.label}</span>
         <span class="spacer"></span>
         <button class="ghost" data-action="duplicate" data-id="${dst.id}" type="button" title="Duplicate this DST">Duplicate</button>
         <button class="ghost" data-action="remove" data-id="${dst.id}" type="button" title="Remove this DST">Remove</button>
       </div>
       <div class="dst-grid">
-        <div class="field">
-          <label class="field-label">Allocated amount</label>
-          <div class="field-suffix-wrap">
-            <span class="field-suffix" style="left:10px; right:auto;">$</span>
-            <input type="number" min="0" step="10000" data-field="amount" data-id="${dst.id}" value="${dst.amount}" style="padding-left:22px;">
-          </div>
-        </div>
-        <div class="field">
-          <label class="field-label">Cash-on-cash return</label>
-          <div class="field-suffix-wrap">
-            <input type="number" min="0" max="30" step="0.1" data-field="cashOnCash" data-id="${dst.id}" value="${dst.cashOnCash}" style="padding-right:26px;">
-            <span class="field-suffix">%/yr</span>
-          </div>
-        </div>
+        ${numberFieldHTML({
+          id: `amt-${dst.id}`, label: "Allocated amount", value: dst.amount,
+          min: 0, max: 100000000, step: 10000, prefix: "$",
+          extraAttrs: `data-field="amount" data-id="${dst.id}"`,
+        })}
+        ${numberFieldHTML({
+          id: `coc-${dst.id}`, label: "Cash-on-cash return", value: dst.cashOnCash,
+          min: 0, max: 30, step: 0.1, suffix: "%/yr",
+          extraAttrs: `data-field="cashOnCash" data-id="${dst.id}"`,
+        })}
         <div class="field">
           <label class="field-label">Leverage: <span data-readout="leverage" data-id="${dst.id}">${dst.leverage}%</span></label>
           <input type="range" min="0" max="70" step="5" data-field="leverage" data-id="${dst.id}" value="${dst.leverage}">
         </div>
-        <div class="field">
-          <label class="field-label">Appreciation rate</label>
-          <div class="field-suffix-wrap">
-            <input type="number" min="-10" max="20" step="0.1" data-field="appreciation" data-id="${dst.id}" value="${dst.appreciation}" style="padding-right:26px;">
-            <span class="field-suffix">%/yr</span>
-          </div>
-        </div>
+        ${numberFieldHTML({
+          id: `appr-${dst.id}`, label: "Appreciation rate", value: dst.appreciation,
+          min: -10, max: 20, step: 0.1, suffix: "%/yr",
+          extraAttrs: `data-field="appreciation" data-id="${dst.id}"`,
+        })}
         <div class="field years-field">
           <label class="field-label">Assumed holding period: <span data-readout="years" data-id="${dst.id}">${dst.years}</span> yrs</label>
           <input type="range" min="${MIN_HOLD}" max="${MAX_HOLD}" step="0.5" data-field="years" data-id="${dst.id}" value="${dst.years}">
@@ -776,11 +951,12 @@ function renderCardList() {
 }
 
 function renderResults() {
-  const portfolio = computePortfolio(state.dsts);
+  const portfolio = computePortfolio(state.dsts, state.fiduciary);
 
   // Stat tiles
   const tiles = [
-    { label: "Total equity invested", value: fmtUSD.format(portfolio.totalEquity) },
+    { label: "Net equity invested", value: fmtUSD.format(portfolio.totalEquity) },
+    { label: "Fees paid", value: fmtUSD.format(portfolio.totalFees) },
     { label: "Cash flow income", value: fmtUSD.format(portfolio.totalCashFlow) },
     { label: "Appreciation gain", value: fmtUSD.format(portfolio.totalAppreciation) },
     { label: "Total profit", value: fmtUSD.format(portfolio.totalProfit), good: true },
@@ -795,14 +971,15 @@ function renderResults() {
 
   // Breakdown table
   if (portfolio.rows.length === 0) {
-    breakdownBodyEl.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:16px;">Add a DST to see the breakdown.</td></tr>`;
+    breakdownBodyEl.innerHTML = `<tr><td colspan="9" style="text-align:center; color:var(--text-muted); padding:16px;">Add a DST to see the breakdown.</td></tr>`;
   } else {
     breakdownBodyEl.innerHTML = portfolio.rows.map(r => {
       const def = CATEGORY_DEFAULTS[r.dst.category];
       return `
       <tr>
-        <td class="cat-cell"><span class="cat-dot" style="background:var(${def.colorVar})"></span>${def.label}</td>
-        <td>${fmtUSD.format(r.equity)}</td>
+        <td class="cat-cell">${catBadgeHTML(def, 20)}${def.label}</td>
+        <td>${fmtUSD.format(r.grossAmount)}</td>
+        <td>${fmtUSD.format(r.feesPaid)}</td>
         <td>${r.dst.leverage}%</td>
         <td>${r.dst.years}</td>
         <td>${fmtUSD.format(r.cashFlowIncome)}</td>
@@ -813,7 +990,8 @@ function renderResults() {
     }).join("") + `
       <tr class="total-row">
         <td>Blended total</td>
-        <td>${fmtUSD.format(portfolio.totalEquity)}</td>
+        <td>${fmtUSD.format(portfolio.totalGross)}</td>
+        <td>${fmtUSD.format(portfolio.totalFees)}</td>
         <td>&mdash;</td>
         <td>${portfolio.weightedYears.toFixed(1)}</td>
         <td>${fmtUSD.format(portfolio.totalCashFlow)}</td>
@@ -834,7 +1012,7 @@ function renderMonteCarlo() {
     mcStatsEl.innerHTML = `<span>Add at least one DST to run a simulation.</span>`;
     return;
   }
-  const result = runMonteCarlo(state.dsts, MC_ITERATIONS);
+  const result = runMonteCarlo(state.dsts, MC_ITERATIONS, state.fiduciary);
   mcChartWrapEl.innerHTML = histogramSVG(result.returns, [
     { value: result.returnP10, label: "P10" },
     { value: result.returnP50, label: "P50" },
@@ -847,8 +1025,15 @@ function renderMonteCarlo() {
   `;
 }
 
+function updateFiduciaryHint() {
+  const totalFeePct = NON_FIDUCIARY_UPFRONT_FEE_PCT + NON_FIDUCIARY_PLACEMENT_FEE_PCT;
+  fiduciaryHintEl.textContent = state.fiduciary
+    ? "No upfront or placement fees applied."
+    : `A ${NON_FIDUCIARY_UPFRONT_FEE_PCT}% upfront fee + ${NON_FIDUCIARY_PLACEMENT_FEE_PCT}% placement fee (${totalFeePct.toFixed(1)}% total) is deducted from each DST before it's invested.`;
+}
+
 /* ----------------------------------------------------------------------------
-   8. EVENT WIRING
+   9. EVENT WIRING
    ---------------------------------------------------------------------------- */
 
 // Populate the "add DST" category dropdown from CATEGORY_DEFAULTS so new
@@ -871,6 +1056,12 @@ document.getElementById("totalProceeds").addEventListener("input", (e) => {
 mcToggleEl.addEventListener("change", () => {
   mcPanelEl.classList.toggle("visible", mcToggleEl.checked);
   if (mcToggleEl.checked) renderMonteCarlo();
+});
+
+fiduciaryToggleEl.addEventListener("change", () => {
+  state.fiduciary = fiduciaryToggleEl.checked;
+  updateFiduciaryHint();
+  renderResults();
 });
 
 // Delegated listeners: cards are rebuilt on add/remove, so binding once on
@@ -919,8 +1110,42 @@ dstListEl.addEventListener("input", (e) => {
   renderResults();
 });
 
+// Stepper buttons live both inside #dstList (per-DST fields) and outside it
+// (total proceeds), so this is bound once at the document level rather than
+// duplicated per container. Clicking one nudges its target <input> by one
+// `step` (respecting min/max), then dispatches a real 'input' event so the
+// existing per-field listeners above do the actual state update + re-render.
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".stepper-btn");
+  if (!btn) return;
+  const input = document.getElementById(btn.dataset.target);
+  if (!input) return;
+  const step = Number(input.step) || 1;
+  const min = input.min !== "" ? Number(input.min) : -Infinity;
+  const max = input.max !== "" ? Number(input.max) : Infinity;
+  const dir = btn.dataset.step === "up" ? 1 : -1;
+  let next = (Number(input.value) || 0) + dir * step;
+  next = Math.min(max, Math.max(min, next));
+  // Round off floating-point drift from repeated 0.1 steps (5.1 + 0.1 !== 5.2 in IEEE754).
+  const decimals = (String(step).split(".")[1] || "").length;
+  next = Number(next.toFixed(decimals));
+  input.value = next;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+});
+
 /* ----------------------------------------------------------------------------
-   9. INIT
+   10. TOUCH / MOBILE DETECTION
+   Adds an `is-touch` class the CSS above uses to enlarge steppers, sliders,
+   and the fiduciary switch. Deliberately keyed off pointer capability
+   (matchMedia "pointer: coarse") rather than viewport width -- a narrow
+   desktop browser window is still a mouse, and a large tablet is still a
+   finger, so width alone would get this wrong in both directions.
+   ---------------------------------------------------------------------------- */
+const isTouchDevice = window.matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
+document.body.classList.toggle("is-touch", isTouchDevice);
+
+/* ----------------------------------------------------------------------------
+   11. INIT
    Seed with a two-DST example (a $1.2M industrial + $0.8M multifamily
    position) so the tool is never a blank slate on first load -- remove or
    adjust freely, this is just a friendlier starting point.
@@ -929,6 +1154,7 @@ state.dsts.push({ ...makeDst("industrial"), amount: 1200000 });
 state.dsts.push({ ...makeDst("multifamily"), amount: 800000 });
 renderCardList();
 renderResults();
+updateFiduciaryHint();
 </script>
 </body>
 </html>
