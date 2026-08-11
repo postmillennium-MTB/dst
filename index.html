@@ -44,6 +44,11 @@
   --cat-studenthousing: #008300; /* green   */
   --cat-medicaloffice:  #4a3aa7; /* violet  */
   --cat-retail:         #e34948; /* red     */
+  /* 9th category -- the validated 8-slot palette is exhausted, so this is
+     a hand-picked addition, not one of the CVD-checked slots above. Kept
+     safe by never relying on hue alone: identity is always icon + text
+     label together (see catBadgeHTML()), same as every other category. */
+  --cat-zerocoupon:     #4d5f6b; /* slate   */
 
   --good-text:    #006300; /* profit / positive figures */
   --warning-text: #8a5000; /* soft non-blocking warnings, e.g. below-minimum DST allocation */
@@ -92,16 +97,36 @@ header p.subtitle {
   border-radius: 14px;
   padding: 20px 22px;
 }
-.panel > h2 {
+.panel h2 {
   font-size: 1.05rem;
   font-weight: 600;
   margin-bottom: 4px;
 }
-.panel > p.hint {
+.panel p.hint {
   color: var(--text-secondary);
   font-size: 0.85rem;
   margin-bottom: 16px;
 }
+.panel h3.subhead {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+/* ---- Whole-panel collapse (every top-level card can be tucked away) ------- */
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 4px;
+}
+.panel-head h2 { margin-bottom: 0; }
+.panel-head .collapse-btn { margin-left: auto; }
+.panel.collapsed .panel-head { margin-bottom: 0; }
+.panel.collapsed .panel-head .collapse-btn { transform: rotate(-90deg); }
+.panel.collapsed .panel-body { display: none; }
 
 /* ---- Field primitives --------------------------------------------------- */
 label.field-label {
@@ -488,6 +513,13 @@ footer.disclaimer {
   margin: 0 auto;
   line-height: 1.5;
 }
+footer.disclaimer .citations { margin-top: 10px; }
+footer.disclaimer a {
+  color: var(--text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+footer.disclaimer a:hover { color: var(--text-primary); }
 
 @media (max-width: 560px) {
   .years-field { grid-column: span 1; }
@@ -509,7 +541,11 @@ footer.disclaimer {
 
   <!-- ======================= PORTFOLIO SETUP ======================= -->
   <section class="panel">
-    <h2>Exchange proceeds</h2>
+    <div class="panel-head" data-panel-toggle tabindex="0" role="button" aria-expanded="true">
+      <h2>Exchange proceeds</h2>
+      <button class="collapse-btn" type="button" tabindex="-1" aria-hidden="true"></button>
+    </div>
+    <div class="panel-body">
     <p class="hint">The total dollar amount you're placing into DSTs (e.g. net proceeds from a property sale).</p>
     <div class="proceeds-row">
       <div class="field">
@@ -523,18 +559,24 @@ footer.disclaimer {
           </div>
         </div>
       </div>
+      <div id="relinquishedDebtFieldWrap"></div>
       <div class="alloc-banner" id="allocBanner">
         <span>Allocated <strong id="allocAmount">$0</strong></span>
         <div class="alloc-bar-track"><div class="alloc-bar-fill" id="allocBarFill" style="width:0%"></div></div>
         <span><strong class="remaining" id="allocRemaining">$0</strong> <span id="allocRemainingLabel">remaining</span></span>
       </div>
     </div>
+    <p class="hint" style="margin-top:8px;">
+      Per 1031 rules, your DSTs' combined debt needs to be equal to or greater than the debt on the property
+      you sold -- any shortfall is taxable "debt-relief boot," even if you took no cash out. Leave debt at
+      $0 if the relinquished property was unencumbered.
+    </p>
 
-    <!-- "Boot": whatever's left unallocated (see allocBanner above) can
-         either keep being reinvested into more DSTs, or be deliberately
-         cashed out here -- in a real 1031 exchange, proceeds not rolled
-         into replacement property are boot and are taxable in the year
-         received, at capital gains rates. -->
+    <!-- "Boot": whatever's left unallocated (see allocBanner above), plus
+         any debt-relief boot above, can either keep being reinvested into
+         more DSTs, or be deliberately cashed out -- in a real 1031
+         exchange, proceeds (or debt reduction) not rolled into replacement
+         property are boot and are taxable in the year received. -->
     <div class="proceeds-row boot-row">
       <div class="field">
         <label class="field-label" for="capGainsRate">Cap. gains rate</label>
@@ -549,35 +591,39 @@ footer.disclaimer {
       </div>
       <div class="boot-banner hidden" id="bootBanner">
         <span>Cash taken out (boot) <strong id="bootAmount">$0</strong></span>
+        <span id="bootDebtReliefRow" class="hidden">Debt-relief boot <strong id="bootDebtRelief">$0</strong></span>
         <span>Est. tax <strong id="bootTax">$0</strong></span>
         <span>You keep <strong id="bootNet">$0</strong></span>
       </div>
     </div>
 
-    <!-- Advanced: real 1031 boot isn't always this simple -- depreciation
+    <!-- Advanced: real 1031 boot isn't always one flat rate -- depreciation
          recapture is taxed first (up to 25% federal) before any remaining
-         gain gets the capital-gains rate, and giving up more debt than you
-         take on (debt-relief boot) is taxable even with zero cash boot. Off
-         by default so the common case stays a single flat-rate estimate. -->
+         gain gets the capital-gains rate above. Off by default so the
+         common case stays a single flat-rate estimate. (Debt-relief boot,
+         above, always applies -- it isn't gated by this toggle.) -->
     <label class="advanced-toggle" style="margin-top:14px;">
       <input type="checkbox" id="advTaxToggle">
-      Advanced: depreciation recapture &amp; debt-relief boot
+      Advanced: depreciation recapture
     </label>
     <div id="advTaxPanel">
       <p class="hint" style="margin-top:10px;">
         Depreciation recapture is recognized first (up to the lesser of accumulated depreciation or total
-        boot), taxed at the recapture rate; any remaining boot is taxed at the capital gains rate above.
-        Debt-relief boot is the amount your DSTs' combined debt falls short of the debt you gave up on the
-        relinquished property -- taxable even if you took no cash out.
+        taxable boot), taxed at the recapture rate; any remaining boot is taxed at the capital gains rate above.
       </p>
       <div id="advTaxFieldsWrap"></div>
       <div class="boot-detail" id="bootDetail"></div>
+    </div>
     </div>
   </section>
 
   <!-- ======================= DST ALLOCATIONS ======================= -->
   <section class="panel">
-    <h2>DST allocations</h2>
+    <div class="panel-head" data-panel-toggle tabindex="0" role="button" aria-expanded="true">
+      <h2>DST allocations</h2>
+      <button class="collapse-btn" type="button" tabindex="-1" aria-hidden="true"></button>
+    </div>
+    <div class="panel-body">
     <p class="hint">Add one DST per category you want to model. Each starts from typical defaults — adjust anything.</p>
 
     <div class="add-row">
@@ -589,11 +635,16 @@ footer.disclaimer {
     </div>
 
     <div id="dstList"></div>
+    </div>
   </section>
 
   <!-- ======================= RESULTS ======================= -->
   <section class="panel">
-    <h2>Projected results</h2>
+    <div class="panel-head" data-panel-toggle tabindex="0" role="button" aria-expanded="true">
+      <h2>Projected results</h2>
+      <button class="collapse-btn" type="button" tabindex="-1" aria-hidden="true"></button>
+    </div>
+    <div class="panel-body">
     <p class="hint">Based on each DST's cash-on-cash return, leverage, appreciation rate, and assumed holding period.</p>
 
     <div class="stat-grid" id="statGrid"></div>
@@ -635,10 +686,30 @@ footer.disclaimer {
         <div class="mc-stats" id="mcStats"></div>
       </div>
     </div>
+
+    <!-- ---- What the exchange defers: theoretical tax on an outright sale ---- -->
+    <div style="margin-top:22px; padding-top:18px; border-top:1px solid var(--gridline);">
+      <h3 class="subhead">If you'd sold instead of exchanged</h3>
+      <p class="hint">
+        Uses the cap. gains rate (and, if Advanced depreciation recapture is on, the same recapture split)
+        from the Exchange proceeds card above to estimate the tax bill from an outright sale of the
+        relinquished property -- compare against the boot tax above to see what the exchange defers.
+      </p>
+      <div class="proceeds-row">
+        <div id="costBasisFieldWrap"></div>
+        <div class="boot-detail" id="theoreticalTaxDetail"></div>
+      </div>
+    </div>
+    </div>
   </section>
 
   <!-- ======================= FIDUCIARY SWITCH ======================= -->
   <section class="panel">
+    <div class="panel-head" data-panel-toggle tabindex="0" role="button" aria-expanded="true">
+      <h2>Fiduciary</h2>
+      <button class="collapse-btn" type="button" tabindex="-1" aria-hidden="true"></button>
+    </div>
+    <div class="panel-body">
     <label class="switch-row">
       <span class="switch">
         <input type="checkbox" id="fiduciaryToggle" checked>
@@ -653,12 +724,21 @@ footer.disclaimer {
     <div id="feeRatesPanel">
       <div class="fee-rates-fields" id="feeRatesFieldsWrap"></div>
     </div>
+    </div>
   </section>
 
   <footer class="disclaimer">
-    This tool is for illustrating how DST return mechanics work and is not investment advice.
-    It does not account for taxes, distribution timing, or any specific offering —
-    consult a qualified advisor before making any investment decision.
+    <p>
+      This tool is for illustrating how DST return mechanics work and is not investment advice.
+      It does not account for taxes, distribution timing, or any specific offering — consult a
+      qualified advisor before making any investment decision. Nothing herein is to be construed
+      as investment advice and has no guarantee of accuracy.
+    </p>
+    <p class="citations">
+      <a href="https://www.law.cornell.edu/uscode/text/26/1031" target="_blank" rel="noopener noreferrer">26 U.S. Code &sect; 1031</a>
+      <span aria-hidden="true">&middot;</span>
+      <a href="https://www.irs.gov/irb/2004-33_IRB" target="_blank" rel="noopener noreferrer">IRS Revenue Ruling 2004-86</a>
+    </p>
   </footer>
 
 </div>
@@ -694,6 +774,7 @@ const ICON_PATHS = {
   down:          `<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 8v8"/><path d="m8 12 4 4 4-4"/>`,
   handshake:     `<path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"/><path d="M3 4h8"/>`,
   chevronDown:   `<path d="m6 9 6 6 6-6"/>`,
+  landmark:      `<path d="M10 18v-7"/><path d="M11.119 2.205a2 2 0 0 1 1.762 0l7.84 3.846A.5.5 0 0 1 20.5 7h-17a.5.5 0 0 1-.22-.949z"/><path d="M14 18v-7"/><path d="M18 18v-7"/><path d="M3 22h18"/><path d="M6 18v-7"/>`,
 };
 function svgIcon(name, size = 16) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name] || ""}</svg>`;
@@ -706,17 +787,25 @@ function svgIcon(name, size = 16) {
    categorical color order stable (see :root in <style>). `light: true` marks
    a fill color too light for a white icon to clear 3:1 contrast on top of it
    (computed, not eyeballed) -- those get dark icon ink instead; see
-   catBadgeHTML() below.
+   catBadgeHTML() below. `leverageMin`/`leverageMax` bound that category's
+   leverage slider -- most DSTs cluster in the same 0-70% band, but a few
+   (zero coupon) run structurally higher, so the range is per-category
+   rather than one fixed slider for everyone.
    ---------------------------------------------------------------------------- */
 const CATEGORY_DEFAULTS = {
-  multifamily:    { label: "Multifamily",     cashOnCash: 5.00, leverage: 45, appreciation: 3.00, colorVar: "--cat-multifamily",    icon: "home",          light: false },
-  industrial:     { label: "Industrial",      cashOnCash: 6.00, leverage: 40, appreciation: 3.50, colorVar: "--cat-industrial",     icon: "factory",       light: true  },
-  office:         { label: "Office",          cashOnCash: 6.50, leverage: 35, appreciation: 2.00, colorVar: "--cat-office",         icon: "building",      light: false },
-  selfstorage:    { label: "Self-Storage",    cashOnCash: 5.50, leverage: 30, appreciation: 3.00, colorVar: "--cat-selfstorage",    icon: "warehouse",     light: true  },
-  seniorliving:   { label: "Senior Living",   cashOnCash: 6.25, leverage: 40, appreciation: 2.50, colorVar: "--cat-seniorliving",   icon: "armchair",      light: true  },
-  studenthousing: { label: "Student Housing", cashOnCash: 6.00, leverage: 45, appreciation: 3.00, colorVar: "--cat-studenthousing", icon: "graduationCap", light: false },
-  medicaloffice:  { label: "Medical Office",  cashOnCash: 5.75, leverage: 35, appreciation: 2.25, colorVar: "--cat-medicaloffice",  icon: "stethoscope",   light: false },
-  retail:         { label: "Retail",          cashOnCash: 6.00, leverage: 40, appreciation: 2.50, colorVar: "--cat-retail",         icon: "store",         light: false },
+  multifamily:    { label: "Multifamily",     cashOnCash: 5.00, leverage: 45, appreciation: 3.00, colorVar: "--cat-multifamily",    icon: "home",          light: false, leverageMin: 0,  leverageMax: 70 },
+  industrial:     { label: "Industrial",      cashOnCash: 6.00, leverage: 40, appreciation: 3.50, colorVar: "--cat-industrial",     icon: "factory",       light: true,  leverageMin: 0,  leverageMax: 70 },
+  office:         { label: "Office",          cashOnCash: 6.50, leverage: 35, appreciation: 2.00, colorVar: "--cat-office",         icon: "building",      light: false, leverageMin: 0,  leverageMax: 70 },
+  selfstorage:    { label: "Self-Storage",    cashOnCash: 5.50, leverage: 30, appreciation: 3.00, colorVar: "--cat-selfstorage",    icon: "warehouse",     light: true,  leverageMin: 0,  leverageMax: 70 },
+  seniorliving:   { label: "Senior Living",   cashOnCash: 6.25, leverage: 40, appreciation: 2.50, colorVar: "--cat-seniorliving",   icon: "armchair",      light: true,  leverageMin: 0,  leverageMax: 70 },
+  studenthousing: { label: "Student Housing", cashOnCash: 6.00, leverage: 45, appreciation: 3.00, colorVar: "--cat-studenthousing", icon: "graduationCap", light: false, leverageMin: 0,  leverageMax: 70 },
+  medicaloffice:  { label: "Medical Office",  cashOnCash: 5.75, leverage: 35, appreciation: 2.25, colorVar: "--cat-medicaloffice",  icon: "stethoscope",   light: false, leverageMin: 0,  leverageMax: 70 },
+  retail:         { label: "Retail",          cashOnCash: 6.00, leverage: 40, appreciation: 2.50, colorVar: "--cat-retail",         icon: "store",         light: false, leverageMin: 0,  leverageMax: 70 },
+  // Zero coupon: no regular distributions -- all net operating income
+  // services the (large) debt instead, so cash-on-cash defaults to 0%.
+  // Structurally much higher leverage than a typical DST, often used to
+  // replace a large amount of relinquished-property debt in an exchange.
+  zerocoupon:     { label: "Zero Coupon DST",  cashOnCash: 0.00, leverage: 75, appreciation: 3.00, colorVar: "--cat-zerocoupon",     icon: "landmark",      light: false, leverageMin: 60, leverageMax: 90 },
 };
 
 // Illustrative shape of DST holding periods: 6-7 years is the fat middle of
@@ -772,45 +861,47 @@ const MIN_DST_INVESTMENT = 25000;
 let nextId = 1;
 const state = {
   totalProceeds: 2000000,
+  relinquishedDebt: 0,                         // $ of debt on the property sold -- a default field, not gated by Advanced (see computeBoot)
   fiduciary: true, // no upfront/placement fees while true
   upfrontFeeRate: DEFAULT_UPFRONT_FEE_PCT,     // editable, only matters while !fiduciary
   placementFeeRate: DEFAULT_PLACEMENT_FEE_PCT, // editable, only matters while !fiduciary
   capGainsRate: DEFAULT_CAP_GAINS_RATE_PCT,    // applied to any boot (unallocated proceeds taken as cash)
-  advancedTax: false,                          // gates depreciation recapture + debt-relief boot below
+  costBasis: 0,                                // $ basis in the relinquished property -- drives the "if you'd sold instead" comparison
+  advancedTax: false,                          // gates the depreciation-recapture tax split below
   accumulatedDepreciation: 0,                  // $ of depreciation taken on the relinquished property
   depRecaptureRate: DEFAULT_DEP_RECAPTURE_RATE_PCT,
-  relinquishedDebt: 0,                         // $ of debt paid off / given up on the relinquished property
   dsts: [], // { id, category, amount, cashOnCash, leverage, appreciation, years, collapsed }
 };
 
 // Whatever's left of totalProceeds after allocating to DSTs is cash boot --
 // proceeds not rolled into replacement property, taxable in the year
-// received. When advancedTax is off, this is the whole story: the full cash
-// boot is taxed at capGainsRatePct, a simplified model that assumes the
-// investor's total realized gain on the relinquished property is at least
-// the boot (the common case for an appreciated property) -- it doesn't
-// track the original cost basis, so it can't check that assumption itself.
+// received. On top of that, per 1031 rules a DST portfolio also needs to
+// carry combined debt at least equal to the debt given up on the
+// relinquished property (`relinquishedDebt`, a default field alongside
+// Total 1031 proceeds) -- any shortfall is "debt-relief boot," taxable even
+// with zero cash received. replacementDebt is derived from the
+// already-computed portfolio rows (each DST's net equity * leverage). This
+// always applies, regardless of the Advanced toggle below.
 //
-// When advancedTax is on, two more real-world wrinkles are modeled:
-//   - Debt-relief boot: if the DSTs' combined debt is less than the debt
-//     given up on the relinquished property, that shortfall is boot too,
-//     even with zero cash received. replacementDebt is derived from the
-//     already-computed portfolio rows (each DST's net equity * leverage).
-//   - Recapture ordering: when gain is boot-limited, recognized gain is
-//     treated as depreciation recapture FIRST (capped at accumulated
-//     depreciation, taxed at depRecaptureRatePct), and only gain beyond
-//     that is capital gain -- so the two rates are applied in that order,
-//     not blended.
+// When advancedTax is off, both boot types combine into one flat-rate
+// estimate at capGainsRatePct -- a simplified model that assumes the
+// investor's total realized gain on the relinquished property is at least
+// the boot (the common case for an appreciated property); it doesn't track
+// the original cost basis, so it can't check that assumption itself (see
+// computeTheoreticalTax below, which does use cost basis, for a more
+// grounded comparison).
+//
+// When advancedTax is on, recapture ordering is modeled too: recognized
+// gain is treated as depreciation recapture FIRST (capped at accumulated
+// depreciation, taxed at depRecaptureRatePct), and only gain beyond that is
+// capital gain -- so the two rates are applied in that order, not blended.
 function computeBoot(totalProceeds, dsts, portfolioRows, opts) {
   const { capGainsRatePct, advancedTax, accumulatedDepreciation, depRecaptureRatePct, relinquishedDebt } = opts;
   const allocated = dsts.reduce((s, d) => s + d.amount, 0);
   const cashBoot = Math.max(totalProceeds - allocated, 0);
 
-  let debtReliefBoot = 0;
-  if (advancedTax) {
-    const replacementDebt = portfolioRows.reduce((s, r) => s + r.equity * (r.dst.leverage / 100), 0);
-    debtReliefBoot = Math.max(relinquishedDebt - replacementDebt, 0);
-  }
+  const replacementDebt = portfolioRows.reduce((s, r) => s + r.equity * (r.dst.leverage / 100), 0);
+  const debtReliefBoot = Math.max(relinquishedDebt - replacementDebt, 0);
   const totalBoot = cashBoot + debtReliefBoot;
 
   let recaptureTax = 0, capGainTax = 0;
@@ -829,6 +920,28 @@ function computeBoot(totalProceeds, dsts, portfolioRows, opts) {
   const netCash = cashBoot - tax;
 
   return { cashBoot, debtReliefBoot, totalBoot, recaptureTax, capGainTax, tax, netCash };
+}
+
+// "What would this have cost without the 1031?" -- an outright sale of the
+// relinquished property, taxed on its full realized gain (proceeds minus
+// cost basis) rather than just the boot. Reuses the same capital-gains rate
+// and (if Advanced is on) the same recapture-ordering logic as computeBoot,
+// since it's the same property and the same tax rules -- just without an
+// exchange to defer anything.
+function computeTheoreticalTax(totalProceeds, costBasis, opts) {
+  const { capGainsRatePct, advancedTax, accumulatedDepreciation, depRecaptureRatePct } = opts;
+  const realizedGain = Math.max(totalProceeds - costBasis, 0);
+
+  let recaptureTax = 0, capGainTax = 0;
+  if (advancedTax) {
+    const recapturePortion = Math.min(Math.max(accumulatedDepreciation, 0), realizedGain);
+    const capGainPortion = realizedGain - recapturePortion;
+    recaptureTax = recapturePortion * (depRecaptureRatePct / 100);
+    capGainTax = capGainPortion * (capGainsRatePct / 100);
+  } else {
+    capGainTax = realizedGain * (capGainsRatePct / 100);
+  }
+  return { realizedGain, recaptureTax, capGainTax, tax: recaptureTax + capGainTax };
 }
 
 function makeDst(categoryKey) {
@@ -1163,6 +1276,8 @@ const fiduciaryIconEl = document.getElementById("fiduciaryIcon");
 const capGainsRateEl = document.getElementById("capGainsRate");
 const bootBannerEl = document.getElementById("bootBanner");
 const bootAmountEl = document.getElementById("bootAmount");
+const bootDebtReliefRowEl = document.getElementById("bootDebtReliefRow");
+const bootDebtReliefEl = document.getElementById("bootDebtRelief");
 const bootTaxEl = document.getElementById("bootTax");
 const bootNetEl = document.getElementById("bootNet");
 const advTaxToggleEl = document.getElementById("advTaxToggle");
@@ -1174,12 +1289,19 @@ const feeRatesFieldsWrapEl = document.getElementById("feeRatesFieldsWrap");
 const expandAllBtnEl = document.getElementById("expandAllBtn");
 const collapseAllBtnEl = document.getElementById("collapseAllBtn");
 const gainMixWrapEl = document.getElementById("gainMixWrap");
+const relinquishedDebtFieldWrapEl = document.getElementById("relinquishedDebtFieldWrap");
+const costBasisFieldWrapEl = document.getElementById("costBasisFieldWrap");
+const theoreticalTaxDetailEl = document.getElementById("theoreticalTaxDetail");
 
 // Fill in the stepper buttons' icons that live in static HTML (the
 // total-proceeds and capital-gains-rate fields) -- everything else gets
 // its icons from numberFieldHTML()/catBadgeHTML() at render time.
 document.querySelectorAll('.stepper-btn[data-target="totalProceeds"][data-step="up"], .stepper-btn[data-target="capGainsRate"][data-step="up"]').forEach(b => b.innerHTML = svgIcon("up", 13));
 document.querySelectorAll('.stepper-btn[data-target="totalProceeds"][data-step="down"], .stepper-btn[data-target="capGainsRate"][data-step="down"]').forEach(b => b.innerHTML = svgIcon("down", 13));
+
+// Same deal for the whole-panel collapse chevrons (one per .panel-head,
+// static empty <button> in the HTML).
+document.querySelectorAll('.panel-head .collapse-btn').forEach(b => b.innerHTML = svgIcon("chevronDown", 18));
 
 function renderAllocationBanner() {
   const allocated = state.dsts.reduce((s, d) => s + d.amount, 0);
@@ -1232,7 +1354,7 @@ function renderCardList() {
         })}
         <div class="field">
           <label class="field-label">Leverage: <span data-readout="leverage" data-id="${dst.id}">${dst.leverage}%</span></label>
-          <input type="range" min="0" max="70" step="1" data-field="leverage" data-id="${dst.id}" value="${dst.leverage}">
+          <input type="range" min="${def.leverageMin}" max="${def.leverageMax}" step="1" data-field="leverage" data-id="${dst.id}" value="${dst.leverage}">
         </div>
         ${numberFieldHTML({
           id: `appr-${dst.id}`, label: "Appreciation rate", value: dst.appreciation,
@@ -1319,8 +1441,9 @@ function renderResults() {
   }
 
   renderAllocationBanner();
-  renderBootBanner(portfolio);
+  const bootResult = renderBootBanner(portfolio);
   renderGainMix(portfolio);
+  renderTheoreticalTax(bootResult);
 
   if (mcToggleEl.checked) renderMonteCarlo(totalFeePct);
 }
@@ -1339,29 +1462,33 @@ function renderBootBanner(portfolio) {
   bootBannerEl.classList.toggle("warn", boot.netCash < 0);
   if (boot.totalBoot > 0) {
     bootAmountEl.textContent = fmtUSD.format(boot.cashBoot);
+    // Debt-relief boot is always computed (see computeBoot), but its own
+    // line in the simple banner only earns its space once it's non-zero --
+    // the common case (no relinquished debt entered) stays exactly as
+    // before.
+    bootDebtReliefRowEl.classList.toggle("hidden", boot.debtReliefBoot <= 0);
+    bootDebtReliefEl.textContent = fmtUSD.format(boot.debtReliefBoot);
     bootTaxEl.textContent = fmtUSD.format(boot.tax);
     bootNetEl.classList.toggle("negative", boot.netCash < 0);
     bootNetEl.textContent = fmtUSD.format(boot.netCash);
   }
 
-  // Detailed breakdown only makes sense once Advanced is on -- it restates
-  // the simple banner above with the debt-relief and recapture/capital-gain
-  // split spelled out.
+  // The detail panel only adds value once Advanced (depreciation recapture)
+  // is on -- it's the recapture-vs-capital-gains tax split; cash/debt boot
+  // are already broken out in the simple banner above.
   if (!state.advancedTax) {
     bootDetailEl.innerHTML = "";
-    return;
-  }
-  if (boot.totalBoot <= 0) {
+  } else if (boot.totalBoot <= 0) {
     bootDetailEl.innerHTML = `<span>No taxable boot with these inputs.</span>`;
-    return;
+  } else {
+    bootDetailEl.innerHTML = `
+      <span>Total taxable boot <strong>${fmtUSD.format(boot.totalBoot)}</strong></span>
+      <span>Depreciation recapture tax (@${state.depRecaptureRate}%) <strong>${fmtUSD.format(boot.recaptureTax)}</strong></span>
+      <span>Capital gains tax (@${state.capGainsRate}%) <strong>${fmtUSD.format(boot.capGainTax)}</strong></span>
+      <span>Total tax <strong>${fmtUSD.format(boot.tax)}</strong></span>`;
   }
-  bootDetailEl.innerHTML = `
-    <span>Cash boot <strong>${fmtUSD.format(boot.cashBoot)}</strong></span>
-    <span>Debt-relief boot <strong>${fmtUSD.format(boot.debtReliefBoot)}</strong></span>
-    <span>Total taxable boot <strong>${fmtUSD.format(boot.totalBoot)}</strong></span>
-    <span>Depreciation recapture tax (@${state.depRecaptureRate}%) <strong>${fmtUSD.format(boot.recaptureTax)}</strong></span>
-    <span>Capital gains tax (@${state.capGainsRate}%) <strong>${fmtUSD.format(boot.capGainTax)}</strong></span>
-    <span>Total tax <strong>${fmtUSD.format(boot.tax)}</strong></span>`;
+
+  return boot;
 }
 
 // "Where the gains come from": cash flow vs. appreciation, as a share of
@@ -1403,6 +1530,26 @@ function renderGainMix(portfolio) {
       <div class="gain-legend">${legendRows}</div>
     </div>
     <p class="gain-caption">${caption}</p>`;
+}
+
+// "What would this have cost without the 1031?" -- compares the boot tax
+// actually owed (bootResult, from renderBootBanner) against the tax on an
+// outright sale of the whole relinquished property, to show what the
+// exchange defers.
+function renderTheoreticalTax(bootResult) {
+  const opts = {
+    capGainsRatePct: state.capGainsRate,
+    advancedTax: state.advancedTax,
+    accumulatedDepreciation: state.accumulatedDepreciation,
+    depRecaptureRatePct: state.depRecaptureRate,
+  };
+  const result = computeTheoreticalTax(state.totalProceeds, state.costBasis, opts);
+  const deferred = result.tax - bootResult.tax;
+
+  theoreticalTaxDetailEl.innerHTML = `
+    <span>Realized gain <strong>${fmtUSD.format(result.realizedGain)}</strong></span>
+    <span>Theoretical tax without 1031 <strong>${fmtUSD.format(result.tax)}</strong></span>
+    <span>Tax deferred by exchanging <strong>${fmtUSD.format(deferred)}</strong></span>`;
 }
 
 function renderMonteCarlo(totalFeePct) {
@@ -1490,16 +1637,25 @@ advTaxToggleEl.addEventListener("change", () => {
   renderResults();
 });
 
-// The advanced-tax fields (accumulated depreciation, recapture rate,
-// relinquished debt) and the non-fiduciary fee-rate fields are each a
-// fixed, non-repeating set -- built once via numberFieldHTML() at init
-// (same helper the per-DST cards use) rather than duplicating markup by
-// hand, then wired up like any other field below.
+// Debt on relinquished property is a default field (alongside Total 1031
+// proceeds) since debt-relief boot always applies, not just under
+// Advanced -- built via numberFieldHTML() like the per-DST fields, into
+// its placeholder in the Exchange proceeds card.
+relinquishedDebtFieldWrapEl.innerHTML = numberFieldHTML({ id: "relinquishedDebt", label: "Debt on relinquished property", value: state.relinquishedDebt, min: 0, max: 100000000, step: 10000, prefix: "$" });
+document.getElementById("relinquishedDebt").addEventListener("input", (e) => {
+  state.relinquishedDebt = Math.max(0, Number(e.target.value) || 0);
+  renderResults();
+});
+
+// The advanced-tax fields (accumulated depreciation, recapture rate) and
+// the non-fiduciary fee-rate fields are each a fixed, non-repeating set --
+// built once via numberFieldHTML() at init (same helper the per-DST cards
+// use) rather than duplicating markup by hand, then wired up like any
+// other field below.
 advTaxFieldsWrapEl.innerHTML = `
   <div class="adv-tax-fields">
     ${numberFieldHTML({ id: "accumDepreciation", label: "Accumulated depreciation", value: state.accumulatedDepreciation, min: 0, max: 100000000, step: 10000, prefix: "$" })}
     ${numberFieldHTML({ id: "depRecaptureRate", label: "Recapture rate", value: state.depRecaptureRate, min: 0, max: 100, step: 1, suffix: "%" })}
-    ${numberFieldHTML({ id: "relinquishedDebt", label: "Debt on relinquished property", value: state.relinquishedDebt, min: 0, max: 100000000, step: 10000, prefix: "$" })}
   </div>`;
 document.getElementById("accumDepreciation").addEventListener("input", (e) => {
   state.accumulatedDepreciation = Math.max(0, Number(e.target.value) || 0);
@@ -1507,10 +1663,6 @@ document.getElementById("accumDepreciation").addEventListener("input", (e) => {
 });
 document.getElementById("depRecaptureRate").addEventListener("input", (e) => {
   state.depRecaptureRate = Math.max(0, Number(e.target.value) || 0);
-  renderResults();
-});
-document.getElementById("relinquishedDebt").addEventListener("input", (e) => {
-  state.relinquishedDebt = Math.max(0, Number(e.target.value) || 0);
   renderResults();
 });
 
@@ -1526,6 +1678,31 @@ document.getElementById("placementFeeRate").addEventListener("input", (e) => {
   state.placementFeeRate = Math.max(0, Number(e.target.value) || 0);
   updateFiduciaryHint();
   renderResults();
+});
+
+// Cost basis drives the "If you'd sold instead of exchanged" comparison at
+// the bottom of Projected results -- same build-once-via-numberFieldHTML
+// pattern as the fields above.
+costBasisFieldWrapEl.innerHTML = numberFieldHTML({ id: "costBasis", label: "Cost basis", value: state.costBasis, min: 0, max: 100000000, step: 10000, prefix: "$" });
+document.getElementById("costBasis").addEventListener("input", (e) => {
+  state.costBasis = Math.max(0, Number(e.target.value) || 0);
+  renderResults();
+});
+
+// Whole-panel collapse: click (or Enter/Space) anywhere on a .panel-head
+// toggles its parent .panel's `collapsed` class. One listener per header
+// rather than delegated on document, since there are only ever four of
+// these and they never get added/removed at runtime.
+document.querySelectorAll(".panel-head").forEach(head => {
+  const toggle = () => {
+    const panel = head.closest(".panel");
+    const collapsed = panel.classList.toggle("collapsed");
+    head.setAttribute("aria-expanded", String(!collapsed));
+  };
+  head.addEventListener("click", toggle);
+  head.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+  });
 });
 
 // Delegated listeners: cards are rebuilt on add/remove, so binding once on
