@@ -321,6 +321,7 @@ table.breakdown .cat-badge svg { width: 11px; height: 11px; }
 .stat-tile .label { font-size: 0.78rem; color: var(--text-secondary); }
 .stat-tile .value { font-size: 1.35rem; font-weight: 700; margin-top: 4px; }
 .stat-tile .value.good { color: var(--good-text); }
+.stat-tile .sub { font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px; }
 
 table.breakdown {
   width: 100%;
@@ -459,7 +460,8 @@ footer.disclaimer {
             <th>Fees</th>
             <th>Leverage</th>
             <th>Hold (yrs)</th>
-            <th>Cash flow income</th>
+            <th>Cash flow ($/yr)</th>
+            <th>Cash flow ($/mo)</th>
             <th>Appreciation gain</th>
             <th>Total profit</th>
             <th>Annualized return</th>
@@ -649,12 +651,21 @@ function computeDst(dst, fiduciary) {
   const leverageMultiplier = 1 + dst.leverage / 100;
   const leveragedValue = equity * leverageMultiplier;
 
-  // Cash flow distributions: simple (non-compounding) annual yield on the
-  // net equity, summed across the holding period. DST cash-on-cash
-  // distributions are paid out as income, not reinvested, so this is not
-  // compounded -- a deliberate simplification, noted here for anyone
-  // extending this later toward a reinvestment/DRIP mode.
-  const cashFlowIncome = equity * (dst.cashOnCash / 100) * dst.years;
+  // Cash flow distributions: a simple (non-compounding) yield on the net
+  // equity. DST cash-on-cash is already an annual rate, so annualCashFlow
+  // is just equity * that rate -- a flat, steady-state figure that doesn't
+  // depend on the (uncertain) holding period. monthlyCashFlow is the same
+  // thing divided evenly across the year (real DSTs typically distribute
+  // monthly or quarterly; this assumes an even monthly split, which is the
+  // right level of precision for an illustrative tool). cashFlowIncome is
+  // the cumulative total actually paid out over the assumed holding period
+  // -- still needed below to work out total profit/final value -- while
+  // annual/monthly are what's shown in the results panel, since "how much
+  // income does this throw off" is more intuitive per year or per month
+  // than as one lump sum spread over several uncertain years.
+  const annualCashFlow = equity * (dst.cashOnCash / 100);
+  const monthlyCashFlow = annualCashFlow / 12;
+  const cashFlowIncome = annualCashFlow * dst.years;
 
   // Appreciation gain, compounded annually on the leveraged value.
   const growthFactor = Math.pow(1 + dst.appreciation / 100, dst.years);
@@ -664,7 +675,7 @@ function computeDst(dst, fiduciary) {
   const totalProfit = finalValue - grossAmount; // profit relative to what was originally committed (fee included as a drag)
   const annualizedReturn = dst.years > 0 && grossAmount > 0 ? Math.pow(finalValue / grossAmount, 1 / dst.years) - 1 : 0;
 
-  return { grossAmount, feesPaid, equity, leveragedValue, cashFlowIncome, appreciationGain, totalProfit, finalValue, annualizedReturn };
+  return { grossAmount, feesPaid, equity, leveragedValue, annualCashFlow, monthlyCashFlow, cashFlowIncome, appreciationGain, totalProfit, finalValue, annualizedReturn };
 }
 
 // Blends the whole portfolio. Uses a dollar-weighted average holding period
@@ -675,12 +686,17 @@ function computeDst(dst, fiduciary) {
 // instead.
 function computePortfolio(dsts, fiduciary) {
   if (dsts.length === 0) {
-    return { totalGross: 0, totalFees: 0, totalEquity: 0, totalCashFlow: 0, totalAppreciation: 0, totalProfit: 0, totalFinalValue: 0, blendedAnnualizedReturn: 0, weightedYears: 0, rows: [] };
+    return { totalGross: 0, totalFees: 0, totalEquity: 0, totalAnnualCashFlow: 0, totalMonthlyCashFlow: 0, totalCashFlow: 0, totalAppreciation: 0, totalProfit: 0, totalFinalValue: 0, blendedAnnualizedReturn: 0, weightedYears: 0, rows: [] };
   }
   const rows = dsts.map(d => ({ dst: d, ...computeDst(d, fiduciary) }));
   const totalGross = rows.reduce((s, r) => s + r.grossAmount, 0);
   const totalFees = rows.reduce((s, r) => s + r.feesPaid, 0);
   const totalEquity = rows.reduce((s, r) => s + r.equity, 0);
+  // Annual/monthly are plain sums -- they're rates, not totals, so no
+  // holding-period weighting applies (unlike weightedYears/equityMultiple
+  // below, which do need it).
+  const totalAnnualCashFlow = rows.reduce((s, r) => s + r.annualCashFlow, 0);
+  const totalMonthlyCashFlow = rows.reduce((s, r) => s + r.monthlyCashFlow, 0);
   const totalCashFlow = rows.reduce((s, r) => s + r.cashFlowIncome, 0);
   const totalAppreciation = rows.reduce((s, r) => s + r.appreciationGain, 0);
   const totalFinalValue = rows.reduce((s, r) => s + r.finalValue, 0);
@@ -691,7 +707,7 @@ function computePortfolio(dsts, fiduciary) {
   const equityMultiple = totalGross > 0 ? totalFinalValue / totalGross : 0;
   const blendedAnnualizedReturn = weightedYears > 0 ? Math.pow(equityMultiple, 1 / weightedYears) - 1 : 0;
 
-  return { totalGross, totalFees, totalEquity, totalCashFlow, totalAppreciation, totalProfit, totalFinalValue, blendedAnnualizedReturn, weightedYears, rows };
+  return { totalGross, totalFees, totalEquity, totalAnnualCashFlow, totalMonthlyCashFlow, totalCashFlow, totalAppreciation, totalProfit, totalFinalValue, blendedAnnualizedReturn, weightedYears, rows };
 }
 
 /* ----------------------------------------------------------------------------
@@ -957,7 +973,7 @@ function renderResults() {
   const tiles = [
     { label: "Net equity invested", value: fmtUSD.format(portfolio.totalEquity) },
     { label: "Fees paid", value: fmtUSD.format(portfolio.totalFees) },
-    { label: "Cash flow income", value: fmtUSD.format(portfolio.totalCashFlow) },
+    { label: "Cash flow income", value: `${fmtUSD.format(portfolio.totalAnnualCashFlow)}/yr`, sub: `${fmtUSD.format(portfolio.totalMonthlyCashFlow)}/mo` },
     { label: "Appreciation gain", value: fmtUSD.format(portfolio.totalAppreciation) },
     { label: "Total profit", value: fmtUSD.format(portfolio.totalProfit), good: true },
     { label: "Projected sale value", value: fmtUSD.format(portfolio.totalFinalValue) },
@@ -967,11 +983,12 @@ function renderResults() {
     <div class="stat-tile">
       <div class="label">${t.label}</div>
       <div class="value${t.good ? " good" : ""}">${t.value}</div>
+      ${t.sub ? `<div class="sub">${t.sub}</div>` : ""}
     </div>`).join("");
 
   // Breakdown table
   if (portfolio.rows.length === 0) {
-    breakdownBodyEl.innerHTML = `<tr><td colspan="9" style="text-align:center; color:var(--text-muted); padding:16px;">Add a DST to see the breakdown.</td></tr>`;
+    breakdownBodyEl.innerHTML = `<tr><td colspan="10" style="text-align:center; color:var(--text-muted); padding:16px;">Add a DST to see the breakdown.</td></tr>`;
   } else {
     breakdownBodyEl.innerHTML = portfolio.rows.map(r => {
       const def = CATEGORY_DEFAULTS[r.dst.category];
@@ -982,7 +999,8 @@ function renderResults() {
         <td>${fmtUSD.format(r.feesPaid)}</td>
         <td>${r.dst.leverage}%</td>
         <td>${r.dst.years}</td>
-        <td>${fmtUSD.format(r.cashFlowIncome)}</td>
+        <td>${fmtUSD.format(r.annualCashFlow)}</td>
+        <td>${fmtUSD.format(r.monthlyCashFlow)}</td>
         <td>${fmtUSD.format(r.appreciationGain)}</td>
         <td>${fmtUSD.format(r.totalProfit)}</td>
         <td>${fmtPct(r.annualizedReturn)}</td>
@@ -994,7 +1012,8 @@ function renderResults() {
         <td>${fmtUSD.format(portfolio.totalFees)}</td>
         <td>&mdash;</td>
         <td>${portfolio.weightedYears.toFixed(1)}</td>
-        <td>${fmtUSD.format(portfolio.totalCashFlow)}</td>
+        <td>${fmtUSD.format(portfolio.totalAnnualCashFlow)}</td>
+        <td>${fmtUSD.format(portfolio.totalMonthlyCashFlow)}</td>
         <td>${fmtUSD.format(portfolio.totalAppreciation)}</td>
         <td>${fmtUSD.format(portfolio.totalProfit)}</td>
         <td>${fmtPct(portfolio.blendedAnnualizedReturn)}</td>
