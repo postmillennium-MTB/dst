@@ -1,10 +1,85 @@
 <!DOCTYPE html>
+<!--
+==================================================================================
+  1031 DST PORTFOLIO CALCULATOR  —  single-file, zero-dependency tool
+  Post Millennium Renaissance  ·  postmillenniumrenaissance.com
+==================================================================================
+
+  FILE MAP  (approximate line numbers — they shift as the file is edited;
+             search the ALL-CAPS section labels below to jump reliably)
+
+  <head> / <style> ............... top of file
+    · DESIGN TOKENS .............. the single light palette + category colors
+    · BASE + LAYOUT .............. body, .page, .panel card shell
+    · FIELD PRIMITIVES ........... labels, number inputs, custom steppers
+    · PROCEEDS / BOOT ............ allocation banner, boot banner, advanced tax
+    · DST CARDS .................. per-DST card grid, bell curve holder
+    · RESULTS .................... stat tiles, gain-mix donut, breakdown table
+    · FIDUCIARY SWITCH ........... the toggle and its fee-rate fields
+    · FOOTER ..................... disclaimer, citations, PMR link
+
+  <script>
+    ==== ALL DATA LIVES IN ONE CONTIGUOUS BLOCK AT THE TOP ====
+    · ICON_PATHS ................. inline Lucide path data, keyed by name
+    · CATEGORY_DEFAULTS .......... THE property-category registry (one line each)
+    · HOLD_PERIOD_WEIGHTS ........ illustrative holding-period distribution
+    · SCALAR_FIELDS .............. THE registry of every whole-portfolio input
+    · default rates / limits ..... starting fee, tax and allocation figures
+    · PMR_ORIGINS ................ iframe postMessage allowlist
+    ==== everything past "END OF DATA" is logic ====
+    · tuning constants ........... simulation size, chart geometry, epsilons
+    · state ...................... the single source of truth for the whole UI
+    · computeDst / computePortfolio  the return model (pure functions)
+    · splitGainTax ............... shared recapture-then-capital-gains split
+    · computeBoot / computeTheoreticalTax  the two tax views
+    · runMonteCarlo .............. holding-period simulation
+    · charts ..................... bellCurveSVG, histogramSVG, donutSVG
+    · renderCardList / renderResults  the two render entry points
+    · URL STATE .................. hash encode/decode + iframe hash bridge
+    · EVENT WIRING ............... all listeners, built from the registries
+    · init() ..................... seeds the example portfolio, applies any hash
+
+  TO ADD A PROPERTY CATEGORY: add ONE line to CATEGORY_DEFAULTS (and one
+      --cat-* CSS variable at the next free slot in :root). The picker, the
+      cards, the breakdown table and the URL codec all derive from it.
+  TO ADD A WHOLE-PORTFOLIO INPUT: add ONE line to SCALAR_FIELDS. The markup,
+      the listener, the clamping and the shareable-URL key all derive from it.
+  TO ADD AN ICON: drop its path data into ICON_PATHS, reference the key.
+
+  NOTE ON THE DEFAULT RETURN FIGURES: the per-category cash-on-cash, leverage
+  and appreciation numbers in CATEGORY_DEFAULTS are ILLUSTRATIVE PLACEHOLDERS,
+  not researched market data. See the comment above that array before quoting
+  them anywhere.
+==================================================================================
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- The tool is deliberately single-light (see DESIGN TOKENS below); these stop
+     mobile browsers from auto-inverting it into an unreadable dark variant. -->
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<meta name="theme-color" content="#eef1f4">
 <title>1031 DST Portfolio Calculator</title>
 <meta name="description" content="Model potential income and appreciation from a 1031 exchange into one or more Delaware Statutory Trusts (DSTs).">
+
+<!-- Favicon is an inline SVG data URI rather than a .ico/.png trio, so the file
+     stays genuinely self-contained and still shows an icon when opened by
+     double-click from a local folder with no web server involved. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%231f66c2'/%3E%3Cpath d='M6 18v-7M10 18v-7M14 18v-7M18 18v-7M4 20h16M12 3.5l8 3.5H4z' fill='none' stroke='%23fff' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+
+<!-- Open Graph / Twitter. og:url and og:image are deliberately ABSENT rather
+     than guessed: this file does not know the wrapper page's public URL and has
+     no share image yet. Add both here once they exist — an invented URL is
+     worse than a missing tag, since it renders a broken card. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Post Millennium Renaissance">
+<meta property="og:title" content="1031 DST Portfolio Calculator">
+<meta property="og:description" content="Model potential income and appreciation from a 1031 exchange into one or more Delaware Statutory Trusts (DSTs).">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="1031 DST Portfolio Calculator">
+<meta name="twitter:description" content="Model potential income and appreciation from a 1031 exchange into one or more Delaware Statutory Trusts (DSTs).">
 
 <style>
 /* ==========================================================================
@@ -121,6 +196,8 @@ header p.subtitle {
   cursor: pointer;
   user-select: none;
   margin-bottom: 4px;
+  min-height: 40px; /* the whole header is the hit target, so it carries the 40px floor */
+  border-radius: 8px;
 }
 .panel-head h2 { margin-bottom: 0; }
 .panel-head .collapse-btn { margin-left: auto; }
@@ -148,15 +225,33 @@ input[type="number"], select {
   border: 1px solid var(--border);
   border-radius: 8px;
 }
-input[type="number"]:focus, select:focus, input[type="range"]:focus {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
-}
 input[type="range"] {
   width: 100%;
   accent-color: var(--accent);
 }
+
+/* Focus rings use :focus-visible, not :focus -- a mouse click on a number
+   field or a slider shouldn't paint a keyboard focus ring, but every
+   keyboard-reached control must. */
+input[type="number"]:focus-visible,
+select:focus-visible,
+input[type="range"]:focus-visible,
+button:focus-visible,
+.panel-head:focus-visible,
+.advanced-toggle input:focus-visible,
+.switch input:focus-visible ~ .switch-track {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .field { display: flex; flex-direction: column; gap: 2px; }
+
+/* Mount points that SCALAR_FIELDS renders into. `display: contents` removes
+   the wrapper box from layout entirely, so the .field inside becomes the
+   real flex item of .proceeds-row and inherits its sizing rules -- without
+   this the wrapper would be the flex item and the field's flex-basis would
+   silently do nothing. */
+.field-mount { display: contents; }
 
 /* Number fields with a custom up/down stepper (replaces the browser's tiny
    native spinner arrows, which are hard to see/target). The input reserves
@@ -194,6 +289,11 @@ input[type="range"] {
   flex-direction: column;
   gap: 2px;
 }
+/* DELIBERATE EXCEPTION to the 40px touch-target floor: two stacked steppers
+   inside a ~45px-tall input can only ever be ~20px each, and growing them to
+   40px would mean an 86px-tall text field. They stay small because they are a
+   convenience adjunct, never the only way in -- every stepper sits on a field
+   the user can also type into directly, which is the accessible path. */
 .stepper-btn {
   flex: 1;
   display: flex;
@@ -219,7 +319,6 @@ input[type="range"] {
 .is-touch .stepper-btns { width: 34px; }
 .is-touch .stepper-btn svg { width: 16px; height: 16px; }
 .is-touch input[type="range"] { height: 30px; }
-.is-touch button.ghost { padding: 10px 12px; }
 
 /* ---- Top-level proceeds + allocation banner ----------------------------- */
 .proceeds-row {
@@ -297,6 +396,7 @@ input[type="range"] {
   color: var(--text-secondary);
 }
 .boot-detail strong { color: var(--text-primary); }
+.boot-detail.empty { color: var(--text-muted); }
 
 /* ---- Below-minimum DST allocation warning ---------------------------------- */
 .min-warning { font-size: 0.78rem; color: var(--warning-text); margin-top: 4px; }
@@ -308,6 +408,23 @@ input[type="range"] {
   cursor: not-allowed;
   opacity: 0.85;
 }
+
+/* ---- "About these defaults" sourcing note ---------------------------------- */
+/* Deliberately styled as a visible, permanent part of the panel rather than a
+   footnote: the figures it qualifies are the first thing a new DST card shows,
+   so the caveat has to be where a reader will actually meet it. */
+.data-note {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  background: var(--surface-inset);
+  border-left: 3px solid var(--warning-text);
+  border-radius: 0 8px 8px 0;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  max-width: 78ch;
+}
+.data-note strong { color: var(--text-primary); }
 
 /* ---- Non-fiduciary editable fee rates -------------------------------------- */
 #feeRatesPanel { margin-top: 14px; display: none; }
@@ -322,7 +439,7 @@ input[type="range"] {
   flex-wrap: wrap;
   align-items: flex-end;
 }
-.add-row select { width: auto; min-width: 200px; }
+.add-row select { width: auto; min-width: 200px; min-height: 40px; }
 button {
   font-family: inherit;
   font-size: 0.9rem;
@@ -333,6 +450,7 @@ button {
   cursor: pointer;
   background: var(--surface-inset);
   color: var(--text-primary);
+  min-height: 40px; /* touch-target floor; steppers are the documented exception above */
 }
 button.primary {
   background: var(--accent);
@@ -343,11 +461,25 @@ button.ghost {
   background: transparent;
   border-color: transparent;
   color: var(--text-secondary);
-  padding: 6px 8px;
+  padding: 8px 12px;
   font-weight: 500;
 }
 button.ghost:hover { color: var(--text-primary); }
 button:hover { filter: brightness(1.05); }
+.is-touch button { min-height: 44px; }
+.stepper-btn, .is-touch .stepper-btn { min-height: 0; }
+
+/* ---- Share (copy a link that reproduces this exact scenario) --------------- */
+.share-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--gridline);
+}
+.share-row .share-hint { font-size: 0.82rem; color: var(--text-muted); max-width: 52ch; }
 
 /* ---- Category icon badge -------------------------------------------------- */
 /* Colored circle + Lucide icon used everywhere a DST's category needs to be
@@ -377,25 +509,33 @@ table.breakdown .cat-badge svg { width: 11px; height: 11px; }
   background: var(--surface-inset);
 }
 .dst-card.collapsed { padding-bottom: 16px; }
+/* Wraps on purpose: on a ~375px phone the chevron + badge + category name +
+   Duplicate + Remove are wider than the card, and without flex-wrap the two
+   buttons pushed straight out of the viewport and scrolled the whole page
+   sideways. Wrapping drops them onto a second line instead. */
 .dst-card-head {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 14px;
+  flex-wrap: wrap;
 }
 .dst-card.collapsed .dst-card-head { margin-bottom: 0; }
-.dst-card-head .cat-name { font-weight: 700; font-size: 0.95rem; }
-.dst-card-head .spacer { flex: 1; }
+.dst-card-head .cat-name { font-weight: 700; font-size: 0.95rem; min-width: 0; overflow-wrap: anywhere; }
+.dst-card-head .spacer { flex: 1 1 0; min-width: 0; }
 .collapse-btn {
   background: transparent;
   border: none;
   padding: 4px;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-secondary);
   cursor: pointer;
   border-radius: 6px;
   transition: transform 0.15s ease;
 }
+.dst-card-head .collapse-btn { min-width: 40px; min-height: 40px; }
 .collapse-btn:hover { color: var(--text-primary); background: var(--surface-page); }
 .dst-card.collapsed .collapse-btn { transform: rotate(-90deg); }
 .dst-card-summary {
@@ -410,8 +550,11 @@ table.breakdown .cat-badge svg { width: 11px; height: 11px; }
   gap: 14px;
   align-items: start;
 }
-.years-field { grid-column: span 2; min-width: 260px; }
-.bellcurve-svg { display: block; margin-top: 6px; }
+/* Mobile-first: the holding-period field is a single column on a phone, and
+   only spans two once there's room. Base CSS is the phone layout; the
+   min-width query below adds the wider one. */
+.years-field { grid-column: span 1; }
+.bellcurve-svg { display: block; margin-top: 6px; max-width: 100%; }
 .empty-state {
   color: var(--text-muted);
   font-size: 0.9rem;
@@ -488,22 +631,23 @@ tr.total-row td { font-weight: 700; border-top: 2px solid var(--axis); border-bo
   gap: 10px;
   cursor: pointer;
   user-select: none;
+  min-height: 40px;
 }
 .advanced-toggle input { width: 16px; height: 16px; accent-color: var(--accent); }
 #mcPanel { margin-top: 18px; display: none; }
 #mcPanel.visible { display: block; }
 .mc-stats { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 14px; font-size: 0.88rem; color: var(--text-secondary); }
 .mc-stats b { color: var(--text-primary); }
+.mc-chart-svg { width: 100%; height: auto; display: block; }
 
 /* ---- Fiduciary switch ------------------------------------------------------ */
-.switch-row { display: flex; align-items: center; gap: 12px; cursor: pointer; user-select: none; }
+.switch-row { display: flex; align-items: center; gap: 12px; cursor: pointer; user-select: none; min-height: 44px; }
 .switch { position: relative; display: inline-block; width: 44px; height: 26px; flex-shrink: 0; }
 .switch input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
 .switch-track { position: absolute; inset: 0; background: var(--axis); border-radius: 999px; transition: background 0.15s ease; pointer-events: none; }
 .switch-thumb { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.3); transition: transform 0.15s ease; }
 .switch input:checked ~ .switch-track { background: var(--accent); }
 .switch input:checked ~ .switch-track .switch-thumb { transform: translateX(18px); }
-.switch input:focus-visible ~ .switch-track { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .switch-text strong { font-size: 0.95rem; }
 .switch-text .hint { display: block; font-size: 0.82rem; color: var(--text-secondary); margin-top: 2px; }
 .fiduciary-icon { display: inline-flex; vertical-align: middle; margin-left: 6px; color: var(--accent); }
@@ -517,20 +661,28 @@ footer.disclaimer {
   font-size: 0.8rem;
   color: var(--text-muted);
   text-align: center;
-  max-width: 60ch;
+  max-width: 68ch;
   margin: 0 auto;
   line-height: 1.5;
 }
-footer.disclaimer .citations { margin-top: 10px; }
+footer.disclaimer p + p { margin-top: 10px; }
 footer.disclaimer a {
   color: var(--text-secondary);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 footer.disclaimer a:hover { color: var(--text-primary); }
+footer.disclaimer .pmr-link { display: inline-block; margin-top: 4px; font-weight: 600; }
 
-@media (max-width: 560px) {
-  .years-field { grid-column: span 1; }
+/* Wider viewports: let the holding-period field span two grid columns so its
+   bell curve has room. Mobile-first -- this ADDS the desktop layout rather
+   than overriding it back off. */
+@media (min-width: 560px) {
+  .years-field { grid-column: span 2; min-width: 260px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
 }
 </style>
 </head>
@@ -551,23 +703,14 @@ footer.disclaimer a:hover { color: var(--text-primary); }
   <section class="panel">
     <div class="panel-head" data-panel-toggle tabindex="0" role="button" aria-expanded="true">
       <h2>Exchange proceeds</h2>
-      <button class="collapse-btn" type="button" tabindex="-1" aria-hidden="true"></button>
+      <span class="collapse-btn" aria-hidden="true"></span>
     </div>
     <div class="panel-body">
     <p class="hint">The total dollar amount you're placing into DSTs (e.g. net proceeds from a property sale).</p>
     <div class="proceeds-row">
-      <div class="field">
-        <label class="field-label" for="totalProceeds">Total 1031 proceeds</label>
-        <div class="stepper-field">
-          <span class="field-affix prefix">$</span>
-          <input type="number" id="totalProceeds" min="0" step="10000" value="2000000" style="padding-left:22px; padding-right:38px;">
-          <div class="stepper-btns">
-            <button type="button" class="stepper-btn" data-step="up" data-target="totalProceeds" aria-label="Increase total proceeds"></button>
-            <button type="button" class="stepper-btn" data-step="down" data-target="totalProceeds" aria-label="Decrease total proceeds"></button>
-          </div>
-        </div>
-      </div>
-      <div id="relinquishedDebtFieldWrap"></div>
+      <!-- Both fields are BUILT FROM THE `SCALAR_FIELDS` REGISTRY in the script below. -->
+      <div id="totalProceedsFieldWrap" class="field-mount"></div>
+      <div id="relinquishedDebtFieldWrap" class="field-mount"></div>
       <div class="alloc-banner" id="allocBanner">
         <span>Allocated <strong id="allocAmount">$0</strong></span>
         <div class="alloc-bar-track"><div class="alloc-bar-fill" id="allocBarFill" style="width:0%"></div></div>
@@ -586,17 +729,7 @@ footer.disclaimer a:hover { color: var(--text-primary); }
          exchange, proceeds (or debt reduction) not rolled into replacement
          property are boot and are taxable in the year received. -->
     <div class="proceeds-row boot-row">
-      <div class="field">
-        <label class="field-label" for="capGainsRate">Cap. gains rate</label>
-        <div class="stepper-field">
-          <input type="number" id="capGainsRate" min="0" max="100" step="1" value="20" style="padding-left:10px; padding-right:76px;">
-          <span class="field-affix suffix">%</span>
-          <div class="stepper-btns">
-            <button type="button" class="stepper-btn" data-step="up" data-target="capGainsRate" aria-label="Increase capital gains tax rate"></button>
-            <button type="button" class="stepper-btn" data-step="down" data-target="capGainsRate" aria-label="Decrease capital gains tax rate"></button>
-          </div>
-        </div>
-      </div>
+      <div id="capGainsFieldWrap" class="field-mount"></div>
       <div class="boot-banner hidden" id="bootBanner">
         <span>Cash taken out (boot) <strong id="bootAmount">$0</strong></span>
         <span id="bootDebtReliefRow" class="hidden">Debt-relief boot <strong id="bootDebtRelief">$0</strong></span>
@@ -619,7 +752,7 @@ footer.disclaimer a:hover { color: var(--text-primary); }
         Depreciation recapture is recognized first (up to the lesser of accumulated depreciation or total
         taxable boot), taxed at the recapture rate; any remaining boot is taxed at the capital gains rate above.
       </p>
-      <div id="advTaxFieldsWrap"></div>
+      <div id="advTaxFieldsWrap" class="adv-tax-fields"></div>
       <div class="boot-detail" id="bootDetail"></div>
     </div>
     </div>
@@ -629,12 +762,23 @@ footer.disclaimer a:hover { color: var(--text-primary); }
   <section class="panel">
     <div class="panel-head" data-panel-toggle tabindex="0" role="button" aria-expanded="true">
       <h2>DST allocations</h2>
-      <button class="collapse-btn" type="button" tabindex="-1" aria-hidden="true"></button>
+      <span class="collapse-btn" aria-hidden="true"></span>
     </div>
     <div class="panel-body">
-    <p class="hint">Add one DST per category you want to model. Each starts from typical defaults — adjust anything.</p>
+    <p class="hint">Add one DST per category you want to model. Each starts from illustrative defaults — adjust anything.</p>
+
+    <!-- Sourcing caveat. Kept visible and permanent, not tucked into the
+         footer, because the numbers it qualifies appear on every new card. -->
+    <p class="data-note">
+      <strong>About these starting figures.</strong> The default cash-on-cash, leverage and appreciation
+      values for each category are <strong>illustrative placeholders</strong> chosen to be plausible in
+      magnitude. They are not researched market data, not fitted to any index, and not a forecast. Real
+      DST offerings vary widely by sponsor, vintage, property and market. Replace them with the figures
+      from the actual offering you're evaluating before drawing any conclusion from the results.
+    </p>
 
     <div class="add-row">
+      <label class="field-label" for="categoryPicker" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;">Property category</label>
       <select id="categoryPicker"></select>
       <button class="primary" id="addDstBtn" type="button">+ Add DST</button>
       <span class="spacer" style="flex:1"></span>
@@ -650,7 +794,7 @@ footer.disclaimer a:hover { color: var(--text-primary); }
   <section class="panel">
     <div class="panel-head" data-panel-toggle tabindex="0" role="button" aria-expanded="true">
       <h2>Projected results</h2>
-      <button class="collapse-btn" type="button" tabindex="-1" aria-hidden="true"></button>
+      <span class="collapse-btn" aria-hidden="true"></span>
     </div>
     <div class="panel-body">
     <p class="hint">Based on each DST's cash-on-cash return, leverage, appreciation rate, and assumed holding period.</p>
@@ -699,14 +843,21 @@ footer.disclaimer a:hover { color: var(--text-primary); }
     <div style="margin-top:22px; padding-top:18px; border-top:1px solid var(--gridline);">
       <h3 class="subhead">If you'd sold instead of exchanged</h3>
       <p class="hint">
-        Uses the cap. gains rate (and, if Advanced depreciation recapture is on, the same recapture split)
-        from the Exchange proceeds card above to estimate the tax bill from an outright sale of the
-        relinquished property -- compare against the boot tax above to see what the exchange defers.
+        Enter what you originally paid for the relinquished property (plus improvements, less depreciation
+        taken) and this estimates the tax bill from selling it outright, using the cap. gains rate — and, if
+        Advanced depreciation recapture is on, the same recapture split — from the Exchange proceeds card above.
+        Compare it against the boot tax to see what the exchange defers.
       </p>
       <div class="proceeds-row">
-        <div id="costBasisFieldWrap"></div>
+        <div id="costBasisFieldWrap" class="field-mount"></div>
         <div class="boot-detail" id="theoreticalTaxDetail"></div>
       </div>
+    </div>
+
+    <!-- ---- Share this scenario ---- -->
+    <div class="share-row">
+      <button class="ghost" id="copyLinkBtn" type="button">Copy link to this scenario</button>
+      <span class="share-hint" id="copyLinkHint">Every input on this page is stored in the link, so whoever opens it sees exactly this setup.</span>
     </div>
     </div>
   </section>
@@ -715,7 +866,7 @@ footer.disclaimer a:hover { color: var(--text-primary); }
   <section class="panel">
     <div class="panel-head" data-panel-toggle tabindex="0" role="button" aria-expanded="true">
       <h2>Fiduciary</h2>
-      <button class="collapse-btn" type="button" tabindex="-1" aria-hidden="true"></button>
+      <span class="collapse-btn" aria-hidden="true"></span>
     </div>
     <div class="panel-body">
     <label class="switch-row">
@@ -737,15 +888,28 @@ footer.disclaimer a:hover { color: var(--text-primary); }
 
   <footer class="disclaimer">
     <p>
-      This tool is for illustrating how DST return mechanics work and is not investment advice.
-      It does not account for taxes, distribution timing, or any specific offering — consult a
-      qualified advisor before making any investment decision. Nothing herein is to be construed
-      as investment advice and has no guarantee of accuracy.
+      This tool illustrates how DST return mechanics work. It is <strong>not investment, tax, or legal
+      advice</strong>. Its tax figures are rough estimates: it models federal capital-gains tax and,
+      optionally, unrecaptured Section 1250 depreciation recapture, both at rates you supply. It does
+      <em>not</em> model state or local tax, the 3.8% net investment income tax, passive-activity or
+      at-risk limits, distribution timing, sponsor-specific fees beyond the two modeled here, or the
+      terms of any actual offering.
+    </p>
+    <p>
+      The default per-category return figures are illustrative placeholders, not researched market data
+      and not a forecast. Consult a qualified tax advisor and read the offering documents before making
+      any investment decision. Nothing here carries any guarantee of accuracy.
     </p>
     <p class="citations">
       <a href="https://www.law.cornell.edu/uscode/text/26/1031" target="_blank" rel="noopener noreferrer">26 U.S. Code &sect; 1031</a>
       <span aria-hidden="true">&middot;</span>
       <a href="https://www.irs.gov/irb/2004-33_IRB" target="_blank" rel="noopener noreferrer">IRS Revenue Ruling 2004-86</a>
+    </p>
+    <p>
+      <!-- target="_top" is REQUIRED: the tool ships inside a cross-origin iframe on
+           the PMR site, and without it this link opens the whole site inside its
+           own embed. This has bitten before. -->
+      <a class="pmr-link" href="https://www.postmillenniumrenaissance.com/" target="_top">Post Millennium Renaissance</a>
     </p>
   </footer>
 
@@ -758,16 +922,20 @@ footer.disclaimer a:hover { color: var(--text-primary); }
    1031 DST PORTFOLIO CALCULATOR
    ----------------------------------------------------------------------------
    Single self-contained file, no external dependencies (no CDN, no build step).
-   Organized top to bottom as: icons -> config -> state -> math -> rendering
-   -> charts -> event wiring. Read in that order when picking this back up
-   later.
+   Organized top to bottom as: data -> END OF DATA -> tuning constants -> state
+   -> math -> rendering -> charts -> URL state -> event wiring. Read in that
+   order when picking this back up later.
    ============================================================================ */
 
-/* ----------------------------------------------------------------------------
-   0. ICONS (inline SVG, Lucide path data, no external icon font/library)
-   Each entry is just the inner <path>/<circle> markup; svgIcon() wraps it in
-   a consistent <svg> shell. Add a new icon by dropping its path data in here
-   and referencing the key from CATEGORY_DEFAULTS.
+/* ============================================================================
+   ==== ALL DATA LIVES IN ONE CONTIGUOUS BLOCK, ENDING AT "END OF DATA" ====
+   ============================================================================ */
+
+/* ---- ICONS (inline SVG, Lucide path data, no external icon font/library) ----
+   Each entry is just the inner <path>/<circle> markup; svgIcon() (below the
+   data boundary) wraps it in a consistent <svg> shell. Add a new icon by
+   dropping its path data in here and referencing the key from
+   CATEGORY_DEFAULTS.
    ---------------------------------------------------------------------------- */
 const ICON_PATHS = {
   home:          `<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>`,
@@ -784,38 +952,54 @@ const ICON_PATHS = {
   chevronDown:   `<path d="m6 9 6 6 6-6"/>`,
   landmark:      `<path d="M10 18v-7"/><path d="M11.119 2.205a2 2 0 0 1 1.762 0l7.84 3.846A.5.5 0 0 1 20.5 7h-17a.5.5 0 0 1-.22-.949z"/><path d="M14 18v-7"/><path d="M18 18v-7"/><path d="M3 22h18"/><path d="M6 18v-7"/>`,
 };
-function svgIcon(name, size = 16) {
-  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name] || ""}</svg>`;
-}
 
-/* ----------------------------------------------------------------------------
-   1. CONFIG
-   Adding a new property category is a one-line addition to CATEGORY_DEFAULTS.
-   `colorVar` should be the next unused --cat-* CSS variable to keep the
-   categorical color order stable (see :root in <style>). `light: true` marks
-   a fill color too light for a white icon to clear 3:1 contrast on top of it
-   (computed, not eyeballed) -- those get dark icon ink instead; see
-   catBadgeHTML() below. `leverageMin`/`leverageMax` bound that category's
-   leverage slider -- most DSTs cluster in the same 0-70% band, but a few
-   (zero coupon) run structurally higher, so the range is per-category
-   rather than one fixed slider for everyone.
-   ---------------------------------------------------------------------------- */
+/* ==== CATEGORY_DEFAULTS — the single source of truth for property categories.
+   TO ADD A CATEGORY: add ONE entry here, plus ONE --cat-* CSS variable at the
+   next free slot in :root. The picker, the cards, the breakdown table and the
+   shareable-URL codec all derive from this array; there is nothing else to edit.
+
+     label           visible name
+     code            2-char key used in the shareable URL. MUST be unique and
+                     MUST NOT change once shipped -- changing one silently
+                     breaks every link anyone has already shared.
+     cashOnCash      starting annual distribution rate, %  (illustrative)
+     leverage        starting debt-on-equity, %            (illustrative)
+     appreciation    starting annual appreciation, %       (illustrative)
+     colorVar        the --cat-* CSS variable for this category
+     icon            key into ICON_PATHS
+     light           true when the fill is too light for white icon ink to
+                     clear 3:1 (computed, not eyeballed) -- those get dark ink
+     leverageMin/Max bound this category's leverage slider. OMIT BOTH to take
+                     the shared 0-70% band (see LEVERAGE_MIN/MAX_DEFAULT); only
+                     categories that genuinely differ state their own, so the
+                     exception reads as deliberate rather than as noise.
+     lockCashOnCash  true disables the cash-on-cash field entirely
+
+   !!  THE cashOnCash / leverage / appreciation FIGURES BELOW ARE ILLUSTRATIVE
+   !!  PLACEHOLDERS, chosen to be plausible in magnitude. They are NOT
+   !!  researched market data, NOT fitted to any index, and NOT a forecast.
+   !!  Real DST offerings vary widely by sponsor, vintage, property and market.
+   !!  They are written to one decimal place on purpose: a figure like 5.00
+   !!  implies a measurement that was never taken. If you ever replace these
+   !!  with sourced numbers, cite the source per category here AND update the
+   !!  "About these starting figures" note in the DST allocations panel.
+   ============================================================================ */
 const CATEGORY_DEFAULTS = {
-  multifamily:    { label: "Multifamily",     cashOnCash: 5.00, leverage: 45, appreciation: 3.00, colorVar: "--cat-multifamily",    icon: "home",          light: false, leverageMin: 0,  leverageMax: 70 },
-  industrial:     { label: "Industrial",      cashOnCash: 6.00, leverage: 40, appreciation: 3.50, colorVar: "--cat-industrial",     icon: "factory",       light: true,  leverageMin: 0,  leverageMax: 70 },
-  office:         { label: "Office",          cashOnCash: 6.50, leverage: 35, appreciation: 2.00, colorVar: "--cat-office",         icon: "building",      light: false, leverageMin: 0,  leverageMax: 70 },
-  selfstorage:    { label: "Self-Storage",    cashOnCash: 5.50, leverage: 30, appreciation: 3.00, colorVar: "--cat-selfstorage",    icon: "warehouse",     light: true,  leverageMin: 0,  leverageMax: 70 },
-  seniorliving:   { label: "Senior Living",   cashOnCash: 6.25, leverage: 40, appreciation: 2.50, colorVar: "--cat-seniorliving",   icon: "armchair",      light: true,  leverageMin: 0,  leverageMax: 70 },
-  studenthousing: { label: "Student Housing", cashOnCash: 6.00, leverage: 45, appreciation: 3.00, colorVar: "--cat-studenthousing", icon: "graduationCap", light: false, leverageMin: 0,  leverageMax: 70 },
-  medicaloffice:  { label: "Medical Office",  cashOnCash: 5.75, leverage: 35, appreciation: 2.25, colorVar: "--cat-medicaloffice",  icon: "stethoscope",   light: false, leverageMin: 0,  leverageMax: 70 },
-  retail:         { label: "Retail",          cashOnCash: 6.00, leverage: 40, appreciation: 2.50, colorVar: "--cat-retail",         icon: "store",         light: false, leverageMin: 0,  leverageMax: 70 },
+  multifamily:    { label: "Multifamily",     code: "mf", cashOnCash: 5.0, leverage: 45, appreciation: 3.0, colorVar: "--cat-multifamily",    icon: "home",          light: false },
+  industrial:     { label: "Industrial",      code: "in", cashOnCash: 6.0, leverage: 40, appreciation: 3.5, colorVar: "--cat-industrial",     icon: "factory",       light: true  },
+  office:         { label: "Office",          code: "of", cashOnCash: 6.5, leverage: 35, appreciation: 2.0, colorVar: "--cat-office",         icon: "building",      light: false },
+  selfstorage:    { label: "Self-Storage",    code: "ss", cashOnCash: 5.5, leverage: 30, appreciation: 3.0, colorVar: "--cat-selfstorage",    icon: "warehouse",     light: true  },
+  seniorliving:   { label: "Senior Living",   code: "sl", cashOnCash: 6.3, leverage: 40, appreciation: 2.5, colorVar: "--cat-seniorliving",   icon: "armchair",      light: true  },
+  studenthousing: { label: "Student Housing", code: "sh", cashOnCash: 6.0, leverage: 45, appreciation: 3.0, colorVar: "--cat-studenthousing", icon: "graduationCap", light: false },
+  medicaloffice:  { label: "Medical Office",  code: "mo", cashOnCash: 5.8, leverage: 35, appreciation: 2.3, colorVar: "--cat-medicaloffice",  icon: "stethoscope",   light: false },
+  retail:         { label: "Retail",          code: "rt", cashOnCash: 6.0, leverage: 40, appreciation: 2.5, colorVar: "--cat-retail",         icon: "store",         light: false },
   // Zero coupon: no regular distributions -- all net operating income
   // services the (large) debt instead, so cash-on-cash is fixed at 0%, not
   // just defaulted there (lockCashOnCash disables the field entirely; see
   // renderCardList). Structurally much higher leverage than a typical DST,
   // often used to replace a large amount of relinquished-property debt in
-  // an exchange.
-  zerocoupon:     { label: "Zero Coupon DST",  cashOnCash: 0.00, leverage: 75, appreciation: 3.00, colorVar: "--cat-zerocoupon",     icon: "landmark",      light: false, leverageMin: 60, leverageMax: 90, lockCashOnCash: true },
+  // an exchange -- hence the only per-category leverage band in this array.
+  zerocoupon:     { label: "Zero Coupon DST", code: "zc", cashOnCash: 0.0, leverage: 75, appreciation: 3.0, colorVar: "--cat-zerocoupon",     icon: "landmark",      light: false, leverageMin: 60, leverageMax: 90, lockCashOnCash: true },
 };
 
 // Illustrative shape of DST holding periods: 6-7 years is the fat middle of
@@ -830,7 +1014,14 @@ const MIN_HOLD = 4;
 const MAX_HOLD = 10;
 const DEFAULT_HOLD_YEARS = 6.5; // the deterministic "expected" point estimate
 
-const MC_ITERATIONS = 4000; // Monte Carlo draws per run -- plenty smooth, still instant in-browser
+// Shared leverage band, used by every category that doesn't state its own.
+const LEVERAGE_MIN_DEFAULT = 0;
+const LEVERAGE_MAX_DEFAULT = 70;
+
+// Ceiling on every dollar-denominated input. Not a modeling limit -- just a
+// sanity bound so a mistyped figure can't run the projection into scientific
+// notation. Raise it if someone genuinely models a $100M+ exchange.
+const MAX_DOLLAR_FIELD = 100000000;
 
 // Non-fiduciary (commission-based) DST offerings typically carry an upfront
 // selling commission plus a dealer-manager/placement fee, both deducted from
@@ -860,8 +1051,83 @@ const DEFAULT_DEP_RECAPTURE_RATE_PCT = 25;
 // can't know a specific sponsor's actual minimum.
 const MIN_DST_INVESTMENT = 25000;
 
+// Fallback allocation for a new DST when the proceeds are already fully
+// spoken for (makeDst normally offers the unallocated remainder instead).
+const DEFAULT_DST_ALLOCATION = 500000;
+
+/* ==== SCALAR_FIELDS — the single source of truth for every whole-portfolio
+   number input (as opposed to the per-DST fields, which come from the cards).
+   TO ADD ONE: add ONE entry here. The markup, the change listener, the
+   clamping, the commit-time normalization and the shareable-URL key are all
+   derived from this array -- there is nothing else to edit.
+
+     id        DOM id of the <input>; must be unique
+     stateKey  the property on `state` this field reads and writes
+     urlKey    short key in the shareable URL hash. MUST NOT change once
+               shipped -- changing one breaks already-shared links.
+     label     visible field label (also used for the stepper aria-labels)
+     min/max   hard bounds. Enforced on COMMIT as well as on the steppers --
+               typing is not bounded by the HTML attributes alone (see
+               clampToField), which is exactly how a 500%/yr appreciation
+               rate used to get in.
+     step      stepper increment
+     prefix    currency affix rendered inside the field, e.g. "$"
+     suffix    unit affix rendered inside the field, e.g. "%"
+     mount     id of the container element this field renders into
+     blankable true = the field may legitimately be EMPTY, and empty means
+               "not supplied" (null) rather than zero. Only costBasis uses
+               this: a $0 basis is a real, meaningful, and very unusual
+               claim, so it must be typed deliberately rather than defaulted.
+     onChange  NAME of an extra function to run after committing. Stored as a
+               string, not a direct reference, because the hook functions are
+               declared further down the file -- looking them up by name at
+               commit time avoids any declaration-order trap.
+   ============================================================================ */
+const SCALAR_FIELDS = [
+  { id: "totalProceeds",     stateKey: "totalProceeds",           urlKey: "tp", label: "Total 1031 proceeds",           min: 0, max: MAX_DOLLAR_FIELD, step: 10000, prefix: "$", mount: "totalProceedsFieldWrap" },
+  { id: "relinquishedDebt",  stateKey: "relinquishedDebt",        urlKey: "rd", label: "Debt on relinquished property", min: 0, max: MAX_DOLLAR_FIELD, step: 10000, prefix: "$", mount: "relinquishedDebtFieldWrap" },
+  { id: "capGainsRate",      stateKey: "capGainsRate",            urlKey: "cg", label: "Cap. gains rate",               min: 0, max: 100, step: 1,   suffix: "%", mount: "capGainsFieldWrap" },
+  { id: "accumDepreciation", stateKey: "accumulatedDepreciation", urlKey: "ad", label: "Accumulated depreciation",      min: 0, max: MAX_DOLLAR_FIELD, step: 10000, prefix: "$", mount: "advTaxFieldsWrap" },
+  { id: "depRecaptureRate",  stateKey: "depRecaptureRate",        urlKey: "dr", label: "Recapture rate",                min: 0, max: 100, step: 1,   suffix: "%", mount: "advTaxFieldsWrap" },
+  { id: "upfrontFeeRate",    stateKey: "upfrontFeeRate",          urlKey: "uf", label: "Upfront fee",                   min: 0, max: 100, step: 0.5, suffix: "%", mount: "feeRatesFieldsWrap", onChange: "updateFiduciaryHint" },
+  { id: "placementFeeRate",  stateKey: "placementFeeRate",        urlKey: "pf", label: "Placement fee",                 min: 0, max: 100, step: 0.5, suffix: "%", mount: "feeRatesFieldsWrap", onChange: "updateFiduciaryHint" },
+  { id: "costBasis",         stateKey: "costBasis",               urlKey: "cb", label: "Cost basis",                    min: 0, max: MAX_DOLLAR_FIELD, step: 10000, prefix: "$", mount: "costBasisFieldWrap", blankable: true },
+];
+
+// Origins allowed to push a hash into this tool via postMessage. The tool is
+// embedded cross-origin on the PMR site, and same-origin policy means a hash
+// on the OUTER page can never be read from in here -- the wrapper page posts
+// it instead. Anything not on this list is ignored outright.
+const PMR_ORIGINS = [
+  "https://www.postmillenniumrenaissance.com",
+  "https://postmillenniumrenaissance.com",
+];
+
+// Public URL of the wrapper page that embeds this tool, if there is one.
+// Left null deliberately rather than guessed: when null, "Copy link" copies
+// this file's own URL (correct for a standalone or local copy). Set it to the
+// wrapper's URL and the copy button will hand out the site link instead, with
+// the scenario hash appended.
+const PMR_WRAPPER_URL = null;
+
+/* ================== END OF DATA — everything below is logic ================== */
+
+/* ---------- tuning constants (named so they're findable, not buried in functions) ---------- */
+const MC_ITERATIONS = 4000;        // Monte Carlo draws per run -- plenty smooth, still instant in-browser
+const MC_HISTOGRAM_BINS = 24;      // bars in the Monte Carlo histogram; more = noisier, fewer = blockier
+const MC_JITTER_YEARS = 1.0;       // width of the uniform jitter around each sampled whole year, in years
+const DONUT_GAP_PX = 3;            // gap trimmed off each donut slice so adjacent slices read as separate
+const FEE_EPSILON_USD = 0.5;       // "are there any fees at all?" threshold -- half a dollar, i.e. below
+                                   // the rounding of every figure the UI displays, so it reads as zero
+const BELLCURVE_W = 280;           // per-card holding-period sparkline, px
+const BELLCURVE_H = 64;
+const HISTOGRAM_VIEWBOX_W = 640;   // histogram is drawn in this coordinate space then scaled to fit
+const HISTOGRAM_VIEWBOX_H = 180;   // its container UNIFORMLY -- see histogramSVG on why that matters
+const URL_SYNC_DEBOUNCE_MS = 250;  // how long typing must pause before the shareable URL is rewritten
+const COPY_FEEDBACK_MS = 2200;     // how long the "Copied" confirmation stays up
+
 /* ----------------------------------------------------------------------------
-   2. STATE
+   STATE
    `dsts` is the single source of truth for every DST card. Input elements
    write into this array on change; render functions read from it. Card DOM
    is only fully rebuilt on add/remove (renderCardList) -- individual input
@@ -876,102 +1142,62 @@ const state = {
   upfrontFeeRate: DEFAULT_UPFRONT_FEE_PCT,     // editable, only matters while !fiduciary
   placementFeeRate: DEFAULT_PLACEMENT_FEE_PCT, // editable, only matters while !fiduciary
   capGainsRate: DEFAULT_CAP_GAINS_RATE_PCT,    // applied to any boot (unallocated proceeds taken as cash)
-  costBasis: 0,                                // $ basis in the relinquished property -- drives the "if you'd sold instead" comparison
+  // null, NOT 0. A zero cost basis is the maximum-gain assumption -- it claims
+  // the property was acquired for nothing -- so defaulting to it would print a
+  // large, confident "tax deferred by exchanging" figure before the user has
+  // entered anything at all. Until a basis is actually supplied, the whole
+  // comparison stays hidden (see renderTheoreticalTax).
+  costBasis: null,
   advancedTax: false,                          // gates the depreciation-recapture tax split below
   accumulatedDepreciation: 0,                  // $ of depreciation taken on the relinquished property
   depRecaptureRate: DEFAULT_DEP_RECAPTURE_RATE_PCT,
   dsts: [], // { id, category, amount, cashOnCash, leverage, appreciation, years, collapsed }
 };
 
-// Whatever's left of totalProceeds after allocating to DSTs is cash boot --
-// proceeds not rolled into replacement property, taxable in the year
-// received. On top of that, per 1031 rules a DST portfolio also needs to
-// carry combined debt at least equal to the debt given up on the
-// relinquished property (`relinquishedDebt`, a default field alongside
-// Total 1031 proceeds) -- any shortfall is "debt-relief boot," taxable even
-// with zero cash received. replacementDebt is derived from the
-// already-computed portfolio rows (each DST's net equity * leverage). This
-// always applies, regardless of the Advanced toggle below.
-//
-// When advancedTax is off, both boot types combine into one flat-rate
-// estimate at capGainsRatePct -- a simplified model that assumes the
-// investor's total realized gain on the relinquished property is at least
-// the boot (the common case for an appreciated property); it doesn't track
-// the original cost basis, so it can't check that assumption itself (see
-// computeTheoreticalTax below, which does use cost basis, for a more
-// grounded comparison).
-//
-// When advancedTax is on, recapture ordering is modeled too: recognized
-// gain is treated as depreciation recapture FIRST (capped at accumulated
-// depreciation, taxed at depRecaptureRatePct), and only gain beyond that is
-// capital gain -- so the two rates are applied in that order, not blended.
-function computeBoot(totalProceeds, dsts, portfolioRows, opts) {
-  const { capGainsRatePct, advancedTax, accumulatedDepreciation, depRecaptureRatePct, relinquishedDebt } = opts;
-  const allocated = dsts.reduce((s, d) => s + d.amount, 0);
-  const cashBoot = Math.max(totalProceeds - allocated, 0);
+/* ----------------------------------------------------------------------------
+   SMALL SHARED HELPERS
+   ---------------------------------------------------------------------------- */
 
-  const replacementDebt = portfolioRows.reduce((s, r) => s + r.equity * (r.dst.leverage / 100), 0);
-  const debtReliefBoot = Math.max(relinquishedDebt - replacementDebt, 0);
-  const totalBoot = cashBoot + debtReliefBoot;
-
-  let recaptureTax = 0, capGainTax = 0;
-  if (advancedTax) {
-    const recapturePortion = Math.min(Math.max(accumulatedDepreciation, 0), totalBoot);
-    const capGainPortion = totalBoot - recapturePortion;
-    recaptureTax = recapturePortion * (depRecaptureRatePct / 100);
-    capGainTax = capGainPortion * (capGainsRatePct / 100);
-  } else {
-    capGainTax = totalBoot * (capGainsRatePct / 100);
-  }
-  const tax = recaptureTax + capGainTax;
-  // Only cash boot is actually money in hand -- debt-relief boot creates a
-  // tax bill without a matching cash distribution, so this can go negative
-  // (a real, worth-knowing scenario: owing more tax than cash received).
-  const netCash = cashBoot - tax;
-
-  return { cashBoot, debtReliefBoot, totalBoot, recaptureTax, capGainTax, tax, netCash };
+// Escape anything interpolated into innerHTML. Nothing user-typed reaches the
+// DOM as markup today (every interpolated value is a number or a hard-coded
+// label), but the moment someone adds a free-text field -- "nickname this
+// DST" is the obvious next one -- it would flow straight through
+// dstSummaryHTML and the breakdown table. Cheap now, awkward to retrofit.
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-// "What would this have cost without the 1031?" -- an outright sale of the
-// relinquished property, taxed on its full realized gain (proceeds minus
-// cost basis) rather than just the boot. Reuses the same capital-gains rate
-// and (if Advanced is on) the same recapture-ordering logic as computeBoot,
-// since it's the same property and the same tax rules -- just without an
-// exchange to defer anything.
-function computeTheoreticalTax(totalProceeds, costBasis, opts) {
-  const { capGainsRatePct, advancedTax, accumulatedDepreciation, depRecaptureRatePct } = opts;
-  const realizedGain = Math.max(totalProceeds - costBasis, 0);
-
-  let recaptureTax = 0, capGainTax = 0;
-  if (advancedTax) {
-    const recapturePortion = Math.min(Math.max(accumulatedDepreciation, 0), realizedGain);
-    const capGainPortion = realizedGain - recapturePortion;
-    recaptureTax = recapturePortion * (depRecaptureRatePct / 100);
-    capGainTax = capGainPortion * (capGainsRatePct / 100);
-  } else {
-    capGainTax = realizedGain * (capGainsRatePct / 100);
-  }
-  return { realizedGain, recaptureTax, capGainTax, tax: recaptureTax + capGainTax };
+function svgIcon(name, size = 16) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name] || ""}</svg>`;
 }
 
-function makeDst(categoryKey) {
-  const def = CATEGORY_DEFAULTS[categoryKey];
-  const allocated = state.dsts.reduce((sum, d) => sum + d.amount, 0);
-  const remaining = Math.max(state.totalProceeds - allocated, 0);
-  return {
-    id: nextId++,
-    category: categoryKey,
-    amount: remaining > 0 ? remaining : 500000, // smart default: fill the gap to total proceeds
-    cashOnCash: def.cashOnCash,
-    leverage: def.leverage,
-    appreciation: def.appreciation,
-    years: DEFAULT_HOLD_YEARS,
-    collapsed: false,
-  };
+const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+
+// A category's leverage band, falling back to the shared default so only the
+// categories that genuinely differ have to say so.
+const levMin = def => def.leverageMin ?? LEVERAGE_MIN_DEFAULT;
+const levMax = def => def.leverageMax ?? LEVERAGE_MAX_DEFAULT;
+
+// Read a number out of an <input> and clamp it to that element's own declared
+// min/max. Browsers do NOT clamp typed values on type="number" -- the
+// attributes only drive the native spinners and form validity -- so without
+// this, typing 500 into a max="20" appreciation field really did put 500 into
+// the model and render a $165 billion gain. Returns null for input that isn't
+// a finite number, which callers treat as "mid-edit, leave state alone".
+function clampToField(el, raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  const lo = el.min !== "" ? Number(el.min) : -Infinity;
+  const hi = el.max !== "" ? Number(el.max) : Infinity;
+  return clamp(n, lo, hi);
 }
+
+// Trim floating-point noise for display and for URL encoding, without forcing
+// a fixed number of decimals (6.5 stays 6.5, 45 stays 45, not 45.00).
+const trimNum = n => Number(Number(n).toFixed(4));
 
 /* ----------------------------------------------------------------------------
-   3. MATH
+   MATH
    Core return model. Kept as pure functions of plain numbers so they're easy
    to unit-test or reuse (e.g. from the Monte Carlo simulator) without
    touching the DOM.
@@ -1065,7 +1291,107 @@ function computePortfolio(dsts, fiduciary, totalFeePct) {
 }
 
 /* ----------------------------------------------------------------------------
-   4. MONTE CARLO (advanced / optional)
+   TAX
+   ---------------------------------------------------------------------------- */
+
+// The recapture-then-capital-gains split, in ONE place. Both tax views below
+// need it and they are displayed side by side and subtracted from each other,
+// so having two copies meant a future rate change applied to one and not the
+// other would produce a "tax deferred" figure that was quietly wrong in a way
+// nothing would catch.
+//
+// Ordering, when advancedTax is on: recognized gain is treated as depreciation
+// recapture FIRST (capped at accumulated depreciation, taxed at the recapture
+// rate), and only gain beyond that is capital gain -- the two rates apply in
+// that order, they are not blended. When advancedTax is off the whole gain
+// takes the flat capital-gains rate.
+function splitGainTax(gain, opts) {
+  const { capGainsRatePct, advancedTax, accumulatedDepreciation, depRecaptureRatePct } = opts;
+  const g = Math.max(gain, 0);
+  if (!advancedTax) {
+    return { recaptureTax: 0, capGainTax: g * (capGainsRatePct / 100), tax: g * (capGainsRatePct / 100) };
+  }
+  const recapturePortion = Math.min(Math.max(accumulatedDepreciation, 0), g);
+  const recaptureTax = recapturePortion * (depRecaptureRatePct / 100);
+  const capGainTax = (g - recapturePortion) * (capGainsRatePct / 100);
+  return { recaptureTax, capGainTax, tax: recaptureTax + capGainTax };
+}
+
+// One place that reads the tax inputs off `state`, so the two views below
+// can't drift apart by being handed different options.
+function taxOpts() {
+  return {
+    capGainsRatePct: state.capGainsRate,
+    advancedTax: state.advancedTax,
+    accumulatedDepreciation: state.accumulatedDepreciation,
+    depRecaptureRatePct: state.depRecaptureRate,
+    relinquishedDebt: state.relinquishedDebt,
+  };
+}
+
+// Whatever's left of totalProceeds after allocating to DSTs is cash boot --
+// proceeds not rolled into replacement property, taxable in the year
+// received. On top of that, per 1031 rules a DST portfolio also needs to
+// carry combined debt at least equal to the debt given up on the
+// relinquished property (`relinquishedDebt`, a default field alongside
+// Total 1031 proceeds) -- any shortfall is "debt-relief boot," taxable even
+// with zero cash received. replacementDebt is derived from the
+// already-computed portfolio rows (each DST's net equity * leverage). This
+// always applies, regardless of the Advanced toggle.
+//
+// The flat-rate (advancedTax off) path is a simplified model that assumes the
+// investor's total realized gain on the relinquished property is at least the
+// boot -- the common case for an appreciated property. It doesn't track the
+// original cost basis, so it can't check that assumption itself; see
+// computeTheoreticalTax below, which does use cost basis, for the more
+// grounded comparison.
+function computeBoot(totalProceeds, dsts, portfolioRows, opts) {
+  const allocated = dsts.reduce((s, d) => s + d.amount, 0);
+  const cashBoot = Math.max(totalProceeds - allocated, 0);
+
+  const replacementDebt = portfolioRows.reduce((s, r) => s + r.equity * (r.dst.leverage / 100), 0);
+  const debtReliefBoot = Math.max(opts.relinquishedDebt - replacementDebt, 0);
+  const totalBoot = cashBoot + debtReliefBoot;
+
+  const { recaptureTax, capGainTax, tax } = splitGainTax(totalBoot, opts);
+
+  // Only cash boot is actually money in hand -- debt-relief boot creates a
+  // tax bill without a matching cash distribution, so this can go negative
+  // (a real, worth-knowing scenario: owing more tax than cash received).
+  const netCash = cashBoot - tax;
+
+  return { cashBoot, debtReliefBoot, totalBoot, recaptureTax, capGainTax, tax, netCash };
+}
+
+// "What would this have cost without the 1031?" -- an outright sale of the
+// relinquished property, taxed on its full realized gain (proceeds minus
+// cost basis) rather than just the boot. Uses the same rate and the same
+// recapture ordering as computeBoot, since it's the same property under the
+// same rules -- just without an exchange to defer anything.
+function computeTheoreticalTax(totalProceeds, costBasis, opts) {
+  const realizedGain = Math.max(totalProceeds - costBasis, 0);
+  const { recaptureTax, capGainTax, tax } = splitGainTax(realizedGain, opts);
+  return { realizedGain, recaptureTax, capGainTax, tax };
+}
+
+function makeDst(categoryKey) {
+  const def = CATEGORY_DEFAULTS[categoryKey];
+  const allocated = state.dsts.reduce((sum, d) => sum + d.amount, 0);
+  const remaining = Math.max(state.totalProceeds - allocated, 0);
+  return {
+    id: nextId++,
+    category: categoryKey,
+    amount: remaining > 0 ? remaining : DEFAULT_DST_ALLOCATION, // smart default: fill the gap to total proceeds
+    cashOnCash: def.cashOnCash,
+    leverage: def.leverage,
+    appreciation: def.appreciation,
+    years: DEFAULT_HOLD_YEARS,
+    collapsed: false,
+  };
+}
+
+/* ----------------------------------------------------------------------------
+   MONTE CARLO (advanced / optional)
    Only the holding period is randomized, drawn from HOLD_PERIOD_WEIGHTS with
    a small jitter so the histogram isn't visibly bucketed into whole years.
    Cash-on-cash, appreciation, and the fiduciary fee setting are held fixed
@@ -1082,9 +1408,9 @@ function buildWeightedSampler(weights) {
   return function sample() {
     const r = Math.random();
     const hit = cumulative.find(c => r <= c.upTo) || cumulative[cumulative.length - 1];
-    // jitter within +/- 0.5 yr of the discrete bucket, clamped to the modeled range
-    const jittered = hit.year + (Math.random() - 0.5);
-    return Math.min(MAX_HOLD, Math.max(MIN_HOLD, jittered));
+    // jitter within +/- half of MC_JITTER_YEARS of the discrete bucket, clamped to the modeled range
+    const jittered = hit.year + (Math.random() - 0.5) * MC_JITTER_YEARS;
+    return clamp(jittered, MIN_HOLD, MAX_HOLD);
   };
 }
 const sampleHoldYears = buildWeightedSampler(HOLD_PERIOD_WEIGHTS);
@@ -1118,14 +1444,14 @@ function runMonteCarlo(dsts, iterations, fiduciary, totalFeePct) {
 }
 
 /* ----------------------------------------------------------------------------
-   5. FORMATTING HELPERS
+   FORMATTING HELPERS
    ---------------------------------------------------------------------------- */
 const fmtUSD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const fmtUSDCompact = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 });
 const fmtPct = (x, digits = 1) => (x * 100).toFixed(digits) + "%";
 
 /* ----------------------------------------------------------------------------
-   6. SMALL MARKUP HELPERS
+   SMALL MARKUP HELPERS
    Reused wherever a category or a stepper-equipped number field is rendered,
    so the two only need to be gotten right once.
    ---------------------------------------------------------------------------- */
@@ -1138,7 +1464,7 @@ function catBadgeHTML(def, size = 26) {
 // Renders a labeled number input with a currency/unit affix and a custom
 // up/down stepper (see .stepper-field / .stepper-btn in <style>). `extraAttrs`
 // carries the data-field/data-id pair the per-DST input listener keys off of;
-// left blank for the standalone total-proceeds field. `disabled` locks the
+// left blank for the whole-portfolio SCALAR_FIELDS. `disabled` locks the
 // field at its given `value` -- no stepper, no typing -- for cases like
 // Zero Coupon DST's fixed 0% cash-on-cash, where the number isn't a
 // starting default but a defining trait of the category; `note` renders a
@@ -1146,33 +1472,35 @@ function catBadgeHTML(def, size = 26) {
 function numberFieldHTML({ id, label, value, min, max, step, prefix, suffix, extraAttrs = "", disabled = false, note = "" }) {
   const padLeft = prefix ? 24 : 10;
   const padRight = suffix ? 76 : 38;
+  const safeLabel = esc(label);
   return `
     <div class="field">
-      <label class="field-label" for="${id}">${label}</label>
+      <label class="field-label" for="${id}">${safeLabel}</label>
       <div class="stepper-field">
-        ${prefix ? `<span class="field-affix prefix">${prefix}</span>` : ""}
+        ${prefix ? `<span class="field-affix prefix">${esc(prefix)}</span>` : ""}
         <input type="number" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}" ${extraAttrs} ${disabled ? "disabled" : ""}
           style="padding-left:${padLeft}px; padding-right:${padRight}px;">
-        ${suffix ? `<span class="field-affix suffix">${suffix}</span>` : ""}
+        ${suffix ? `<span class="field-affix suffix">${esc(suffix)}</span>` : ""}
         ${disabled ? "" : `
         <div class="stepper-btns">
-          <button type="button" class="stepper-btn" data-step="up" data-target="${id}" aria-label="Increase ${label}">${svgIcon("up", 13)}</button>
-          <button type="button" class="stepper-btn" data-step="down" data-target="${id}" aria-label="Decrease ${label}">${svgIcon("down", 13)}</button>
+          <button type="button" class="stepper-btn" data-step="up" data-target="${id}" aria-label="Increase ${safeLabel}">${svgIcon("up", 13)}</button>
+          <button type="button" class="stepper-btn" data-step="down" data-target="${id}" aria-label="Decrease ${safeLabel}">${svgIcon("down", 13)}</button>
         </div>`}
       </div>
-      ${note ? `<p class="field-note">${note}</p>` : ""}
+      ${note ? `<p class="field-note">${esc(note)}</p>` : ""}
     </div>`;
 }
 
 /* ----------------------------------------------------------------------------
-   7. CHARTS (inline SVG, no libraries)
-   Two small, purpose-built charts:
+   CHARTS (inline SVG, no libraries)
+   Three small, purpose-built charts:
      - bellCurveSVG: the illustrative holding-period distribution, with a
        marker for the currently chosen holding period. Used once per DST card.
      - histogramSVG: Monte Carlo output distribution with P10/P50/P90 markers.
-   Both build a plain SVG string and are inserted via innerHTML.
+     - donutSVG: the two-slice cash-flow-vs-appreciation mix.
+   All build a plain SVG string and are inserted via innerHTML.
    ---------------------------------------------------------------------------- */
-function bellCurveSVG(highlightYears, width = 280, height = 64, colorVar = "--accent") {
+function bellCurveSVG(highlightYears, width = BELLCURVE_W, height = BELLCURVE_H, colorVar = "--accent") {
   const years = Object.keys(HOLD_PERIOD_WEIGHTS).map(Number).sort((a, b) => a - b);
   const maxW = Math.max(...years.map(y => HOLD_PERIOD_WEIGHTS[y]));
   const padTop = 6, padBottom = 16, padX = 4;
@@ -1199,7 +1527,7 @@ function bellCurveSVG(highlightYears, width = 280, height = 64, colorVar = "--ac
   const markerX = xFor(highlightYears);
 
   return `
-    <svg class="bellcurve-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Typical DST holding period distribution, ${highlightYears} years selected">
+    <svg class="bellcurve-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Typical DST holding period distribution, ${esc(highlightYears)} years selected">
       <path d="${areaPath}" fill="var(${colorVar})" opacity="0.14"></path>
       <path d="${path}" fill="none" stroke="var(${colorVar})" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
       <line x1="${markerX}" y1="${padTop - 2}" x2="${markerX}" y2="${baseline}" stroke="var(--text-primary)" stroke-width="1.5"></line>
@@ -1207,12 +1535,19 @@ function bellCurveSVG(highlightYears, width = 280, height = 64, colorVar = "--ac
     </svg>`;
 }
 
-function histogramSVG(values, markers, width = 640, height = 180) {
+// NOTE ON SCALING: this used to render with preserveAspectRatio="none", which
+// stretches the x-axis independently of the y-axis when the container is wider
+// than the viewBox -- so the P10/P50/P90 labels came out visibly widened (about
+// 40% inside a 900px panel). Leaving preserveAspectRatio at its default
+// (xMidYMid meet) and letting height follow from width via CSS keeps every
+// glyph and bar in proportion at any container width.
+function histogramSVG(values, markers) {
+  const width = HISTOGRAM_VIEWBOX_W, height = HISTOGRAM_VIEWBOX_H;
   const padTop = 10, padBottom = 22, padX = 8;
   const plotW = width - padX * 2;
   const plotH = height - padTop - padBottom;
   const min = Math.min(...values), max = Math.max(...values);
-  const binCount = 24;
+  const binCount = MC_HISTOGRAM_BINS;
   const binWidth = (max - min) / binCount || 1;
   const bins = new Array(binCount).fill(0);
   values.forEach(v => {
@@ -1235,11 +1570,11 @@ function histogramSVG(values, markers, width = 640, height = 180) {
 
   const markerLines = markers.map(m => `
     <line x1="${xFor(m.value)}" y1="${padTop - 4}" x2="${xFor(m.value)}" y2="${padTop + plotH}" stroke="var(--text-secondary)" stroke-width="1" stroke-dasharray="3,2"></line>
-    <text x="${xFor(m.value)}" y="${height - 6}" font-size="10" text-anchor="middle" fill="var(--text-secondary)">${m.label}</text>
+    <text x="${xFor(m.value)}" y="${height - 6}" font-size="10" text-anchor="middle" fill="var(--text-secondary)">${esc(m.label)}</text>
   `).join("");
 
   return `
-    <svg width="100%" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Distribution of simulated blended annualized returns">
+    <svg class="mc-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Distribution of simulated blended annualized returns">
       ${bars}
       ${markerLines}
     </svg>`;
@@ -1259,7 +1594,7 @@ function donutSVG(segments, size = 116, strokeWidth = 22) {
   if (total <= 0) {
     return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${center}" cy="${center}" r="${r}" fill="none" stroke="var(--gridline)" stroke-width="${strokeWidth}"></circle></svg>`;
   }
-  const gapPx = segments.length > 1 ? 3 : 0;
+  const gapPx = segments.length > 1 ? DONUT_GAP_PX : 0;
   let offset = 0;
   const rings = segments.map(seg => {
     const frac = Math.max(seg.value, 0) / total;
@@ -1272,7 +1607,7 @@ function donutSVG(segments, size = 116, strokeWidth = 22) {
 }
 
 /* ----------------------------------------------------------------------------
-   8. RENDERING
+   DOM REFERENCES
    ---------------------------------------------------------------------------- */
 const dstListEl = document.getElementById("dstList");
 const statGridEl = document.getElementById("statGrid");
@@ -1289,7 +1624,6 @@ const mcToggleEl = document.getElementById("mcToggle");
 const fiduciaryToggleEl = document.getElementById("fiduciaryToggle");
 const fiduciaryHintEl = document.getElementById("fiduciaryHint");
 const fiduciaryIconEl = document.getElementById("fiduciaryIcon");
-const capGainsRateEl = document.getElementById("capGainsRate");
 const bootBannerEl = document.getElementById("bootBanner");
 const bootAmountEl = document.getElementById("bootAmount");
 const bootDebtReliefRowEl = document.getElementById("bootDebtReliefRow");
@@ -1298,27 +1632,24 @@ const bootTaxEl = document.getElementById("bootTax");
 const bootNetEl = document.getElementById("bootNet");
 const advTaxToggleEl = document.getElementById("advTaxToggle");
 const advTaxPanelEl = document.getElementById("advTaxPanel");
-const advTaxFieldsWrapEl = document.getElementById("advTaxFieldsWrap");
 const bootDetailEl = document.getElementById("bootDetail");
 const feeRatesPanelEl = document.getElementById("feeRatesPanel");
-const feeRatesFieldsWrapEl = document.getElementById("feeRatesFieldsWrap");
 const expandAllBtnEl = document.getElementById("expandAllBtn");
 const collapseAllBtnEl = document.getElementById("collapseAllBtn");
 const gainMixWrapEl = document.getElementById("gainMixWrap");
-const relinquishedDebtFieldWrapEl = document.getElementById("relinquishedDebtFieldWrap");
-const costBasisFieldWrapEl = document.getElementById("costBasisFieldWrap");
 const theoreticalTaxDetailEl = document.getElementById("theoreticalTaxDetail");
+const categoryPickerEl = document.getElementById("categoryPicker");
+const copyLinkBtnEl = document.getElementById("copyLinkBtn");
+const copyLinkHintEl = document.getElementById("copyLinkHint");
 
-// Fill in the stepper buttons' icons that live in static HTML (the
-// total-proceeds and capital-gains-rate fields) -- everything else gets
-// its icons from numberFieldHTML()/catBadgeHTML() at render time.
-document.querySelectorAll('.stepper-btn[data-target="totalProceeds"][data-step="up"], .stepper-btn[data-target="capGainsRate"][data-step="up"]').forEach(b => b.innerHTML = svgIcon("up", 13));
-document.querySelectorAll('.stepper-btn[data-target="totalProceeds"][data-step="down"], .stepper-btn[data-target="capGainsRate"][data-step="down"]').forEach(b => b.innerHTML = svgIcon("down", 13));
+// The whole-panel collapse chevrons live in static markup as empty <span>s
+// (spans, not buttons -- the .panel-head itself is the role="button", and
+// nesting a real button inside another button's role is invalid ARIA).
+document.querySelectorAll(".panel-head .collapse-btn").forEach(b => { b.innerHTML = svgIcon("chevronDown", 18); });
 
-// Same deal for the whole-panel collapse chevrons (one per .panel-head,
-// static empty <button> in the HTML).
-document.querySelectorAll('.panel-head .collapse-btn').forEach(b => b.innerHTML = svgIcon("chevronDown", 18));
-
+/* ----------------------------------------------------------------------------
+   RENDERING
+   ---------------------------------------------------------------------------- */
 function renderAllocationBanner() {
   const allocated = state.dsts.reduce((s, d) => s + d.amount, 0);
   const remaining = state.totalProceeds - allocated;
@@ -1334,7 +1665,7 @@ function renderAllocationBanner() {
 // card is collapsed -- lets a 3+ DST portfolio (the tool's "complex demo"
 // use case) fit on screen without losing at-a-glance numbers.
 function dstSummaryHTML(dst) {
-  return `${fmtUSD.format(dst.amount)} &middot; ${dst.cashOnCash}% CoC &middot; ${dst.leverage}% leverage &middot; ${dst.years}yr hold`;
+  return `${fmtUSD.format(dst.amount)} &middot; ${esc(trimNum(dst.cashOnCash))}% CoC &middot; ${esc(trimNum(dst.leverage))}% leverage &middot; ${esc(trimNum(dst.years))}yr hold`;
 }
 
 function renderCardList() {
@@ -1347,9 +1678,9 @@ function renderCardList() {
     return `
     <div class="dst-card${dst.collapsed ? " collapsed" : ""}" data-id="${dst.id}">
       <div class="dst-card-head">
-        <button class="collapse-btn" data-action="toggle-collapse" data-id="${dst.id}" type="button" aria-label="${dst.collapsed ? "Expand" : "Collapse"} this DST" title="${dst.collapsed ? "Expand" : "Collapse"}">${svgIcon("chevronDown", 18)}</button>
+        <button class="collapse-btn" data-action="toggle-collapse" data-id="${dst.id}" type="button" aria-expanded="${dst.collapsed ? "false" : "true"}" aria-label="${dst.collapsed ? "Expand" : "Collapse"} ${esc(def.label)} DST" title="${dst.collapsed ? "Expand" : "Collapse"}">${svgIcon("chevronDown", 18)}</button>
         ${catBadgeHTML(def, 26)}
-        <span class="cat-name">${def.label}</span>
+        <span class="cat-name">${esc(def.label)}</span>
         <span class="spacer"></span>
         <button class="ghost" data-action="duplicate" data-id="${dst.id}" type="button" title="Duplicate this DST">Duplicate</button>
         <button class="ghost" data-action="remove" data-id="${dst.id}" type="button" title="Remove this DST">Remove</button>
@@ -1360,7 +1691,7 @@ function renderCardList() {
       <div class="dst-grid">
         ${numberFieldHTML({
           id: `amt-${dst.id}`, label: "Allocated amount", value: dst.amount,
-          min: 0, max: 100000000, step: 10000, prefix: "$",
+          min: 0, max: MAX_DOLLAR_FIELD, step: 10000, prefix: "$",
           extraAttrs: `data-field="amount" data-id="${dst.id}"`,
         })}
         ${numberFieldHTML({
@@ -1371,8 +1702,8 @@ function renderCardList() {
           note: def.lockCashOnCash ? "Fixed at 0% -- zero coupon DSTs pay no regular distributions." : "",
         })}
         <div class="field">
-          <label class="field-label">Leverage: <span data-readout="leverage" data-id="${dst.id}">${dst.leverage}%</span></label>
-          <input type="range" min="${def.leverageMin}" max="${def.leverageMax}" step="1" data-field="leverage" data-id="${dst.id}" value="${dst.leverage}">
+          <label class="field-label" for="lev-${dst.id}">Leverage: <span data-readout="leverage" data-id="${dst.id}">${esc(trimNum(dst.leverage))}%</span></label>
+          <input type="range" id="lev-${dst.id}" min="${levMin(def)}" max="${levMax(def)}" step="1" data-field="leverage" data-id="${dst.id}" value="${dst.leverage}">
         </div>
         ${numberFieldHTML({
           id: `appr-${dst.id}`, label: "Appreciation rate", value: dst.appreciation,
@@ -1380,9 +1711,9 @@ function renderCardList() {
           extraAttrs: `data-field="appreciation" data-id="${dst.id}"`,
         })}
         <div class="field years-field">
-          <label class="field-label">Assumed holding period: <span data-readout="years" data-id="${dst.id}">${dst.years}</span> yrs</label>
-          <input type="range" min="${MIN_HOLD}" max="${MAX_HOLD}" step="0.5" data-field="years" data-id="${dst.id}" value="${dst.years}">
-          <div class="bellcurve-holder" data-holder="years" data-id="${dst.id}">${bellCurveSVG(dst.years, 280, 64, def.colorVar)}</div>
+          <label class="field-label" for="yrs-${dst.id}">Assumed holding period: <span data-readout="years" data-id="${dst.id}">${esc(trimNum(dst.years))}</span> yrs</label>
+          <input type="range" id="yrs-${dst.id}" min="${MIN_HOLD}" max="${MAX_HOLD}" step="0.5" data-field="years" data-id="${dst.id}" value="${dst.years}">
+          <div class="bellcurve-holder" data-holder="years" data-id="${dst.id}">${bellCurveSVG(dst.years, BELLCURVE_W, BELLCURVE_H, def.colorVar)}</div>
         </div>
       </div>
       `}
@@ -1418,7 +1749,7 @@ function renderResults() {
   ];
   statGridEl.innerHTML = tiles.map(t => `
     <div class="stat-tile">
-      <div class="label">${t.label}</div>
+      <div class="label">${esc(t.label)}</div>
       <div class="value${t.good ? " good" : ""}">${t.value}</div>
       ${t.sub ? `<div class="sub">${t.sub}</div>` : ""}
     </div>`).join("");
@@ -1434,11 +1765,11 @@ function renderResults() {
       const def = CATEGORY_DEFAULTS[r.dst.category];
       return `
       <tr>
-        <td class="cat-cell">${catBadgeHTML(def, 20)}${def.label}</td>
+        <td class="cat-cell">${catBadgeHTML(def, 20)}${esc(def.label)}</td>
         <td>${fmtUSD.format(r.grossAmount)}</td>
         <td>${fmtUSD.format(r.feesPaid)}</td>
-        <td>${r.dst.leverage}%</td>
-        <td>${r.dst.years}</td>
+        <td>${esc(trimNum(r.dst.leverage))}%</td>
+        <td>${esc(trimNum(r.dst.years))}</td>
         ${cfCell(r.annualCashFlow, r.monthlyCashFlow)}
         <td>${fmtUSD.format(r.appreciationGain)}</td>
         <td>${fmtUSD.format(r.totalProfit)}</td>
@@ -1463,17 +1794,15 @@ function renderResults() {
   renderGainMix(portfolio);
   renderTheoreticalTax(bootResult);
 
-  if (mcToggleEl.checked) renderMonteCarlo(totalFeePct);
+  // Coalesced, NOT called directly: a slider drag fires `input` 60-100 times a
+  // second and each simulation is 4,000 iterations per DST (~19ms at 10 DSTs,
+  // past the frame budget on its own). scheduleMonteCarlo collapses a burst of
+  // those into one run per painted frame.
+  if (mcToggleEl.checked) scheduleMonteCarlo();
 }
 
 function renderBootBanner(portfolio) {
-  const opts = {
-    capGainsRatePct: state.capGainsRate,
-    advancedTax: state.advancedTax,
-    accumulatedDepreciation: state.accumulatedDepreciation,
-    depRecaptureRatePct: state.depRecaptureRate,
-    relinquishedDebt: state.relinquishedDebt,
-  };
+  const opts = taxOpts();
   const boot = computeBoot(state.totalProceeds, state.dsts, portfolio.rows, opts);
 
   bootBannerEl.classList.toggle("hidden", boot.totalBoot <= 0);
@@ -1501,8 +1830,8 @@ function renderBootBanner(portfolio) {
   } else {
     bootDetailEl.innerHTML = `
       <span>Total taxable boot <strong>${fmtUSD.format(boot.totalBoot)}</strong></span>
-      <span>Depreciation recapture tax (@${state.depRecaptureRate}%) <strong>${fmtUSD.format(boot.recaptureTax)}</strong></span>
-      <span>Capital gains tax (@${state.capGainsRate}%) <strong>${fmtUSD.format(boot.capGainTax)}</strong></span>
+      <span>Depreciation recapture tax (@${esc(trimNum(state.depRecaptureRate))}%) <strong>${fmtUSD.format(boot.recaptureTax)}</strong></span>
+      <span>Capital gains tax (@${esc(trimNum(state.capGainsRate))}%) <strong>${fmtUSD.format(boot.capGainTax)}</strong></span>
       <span>Total tax <strong>${fmtUSD.format(boot.tax)}</strong></span>`;
   }
 
@@ -1530,7 +1859,7 @@ function renderGainMix(portfolio) {
   const legendRows = segments.map(seg => `
     <div class="row">
       <span class="dot" style="background:var(${seg.colorVar})"></span>
-      <span class="name">${seg.label}</span>
+      <span class="name">${esc(seg.label)}</span>
       <span class="amt">${fmtUSD.format(seg.value)} (${fmtPct(seg.value / sum, 0)})</span>
     </div>`).join("");
 
@@ -1538,7 +1867,7 @@ function renderGainMix(portfolio) {
   // (Fiduciary on). A non-fiduciary fee is subtracted from that same sum to
   // arrive at Total Profit, so the two figures part ways by exactly the fee.
   const fees = portfolio.totalFees;
-  const caption = fees > 0.5
+  const caption = fees > FEE_EPSILON_USD
     ? `Cash flow + appreciation = ${fmtUSD.format(sum)} — Total Profit is ${fmtUSD.format(portfolio.totalProfit)} after subtracting ${fmtUSD.format(fees)} in upfront/placement fees (switch to Fiduciary to remove that gap).`
     : `Cash flow + appreciation = ${fmtUSD.format(sum)}, which equals Total Profit while Fiduciary is on (no fees to subtract).`;
 
@@ -1554,20 +1883,40 @@ function renderGainMix(portfolio) {
 // actually owed (bootResult, from renderBootBanner) against the tax on an
 // outright sale of the whole relinquished property, to show what the
 // exchange defers.
+//
+// Stays HIDDEN until a cost basis is actually entered. A zero basis is not a
+// neutral default: it asserts the property was acquired for nothing, which
+// maximizes the apparent deferral. Printing that figure before the user has
+// supplied anything would be the tool inventing its own most flattering
+// input, so an empty state says what's missing instead.
 function renderTheoreticalTax(bootResult) {
-  const opts = {
-    capGainsRatePct: state.capGainsRate,
-    advancedTax: state.advancedTax,
-    accumulatedDepreciation: state.accumulatedDepreciation,
-    depRecaptureRatePct: state.depRecaptureRate,
-  };
-  const result = computeTheoreticalTax(state.totalProceeds, state.costBasis, opts);
+  if (state.costBasis === null) {
+    theoreticalTaxDetailEl.classList.add("empty");
+    theoreticalTaxDetailEl.innerHTML = `<span>Enter your cost basis to see what the exchange defers.</span>`;
+    return;
+  }
+  theoreticalTaxDetailEl.classList.remove("empty");
+  const result = computeTheoreticalTax(state.totalProceeds, state.costBasis, taxOpts());
   const deferred = result.tax - bootResult.tax;
 
   theoreticalTaxDetailEl.innerHTML = `
     <span>Realized gain <strong>${fmtUSD.format(result.realizedGain)}</strong></span>
     <span>Theoretical tax without 1031 <strong>${fmtUSD.format(result.tax)}</strong></span>
     <span>Tax deferred by exchanging <strong>${fmtUSD.format(deferred)}</strong></span>`;
+}
+
+// One Monte Carlo run per painted frame at most. requestAnimationFrame rather
+// than a timeout so the simulation lands in step with the browser's own paint
+// cycle instead of fighting it, and so a drag that stops mid-frame still gets
+// a final run. Reads the fee rate at RUN time, not schedule time, so a burst
+// of edits always simulates the latest state.
+let mcFrame = 0;
+function scheduleMonteCarlo() {
+  if (mcFrame) return;
+  mcFrame = requestAnimationFrame(() => {
+    mcFrame = 0;
+    renderMonteCarlo(state.upfrontFeeRate + state.placementFeeRate);
+  });
 }
 
 function renderMonteCarlo(totalFeePct) {
@@ -1593,7 +1942,7 @@ function updateFiduciaryHint() {
   const totalFeePct = state.upfrontFeeRate + state.placementFeeRate;
   fiduciaryHintEl.textContent = state.fiduciary
     ? "No upfront or placement fees applied."
-    : `A ${state.upfrontFeeRate}% upfront fee + ${state.placementFeeRate}% placement fee (${totalFeePct.toFixed(1)}% total) is deducted from each DST before it's invested.`;
+    : `A ${trimNum(state.upfrontFeeRate)}% upfront fee + ${trimNum(state.placementFeeRate)}% placement fee (${totalFeePct.toFixed(1)}% total) is deducted from each DST before it's invested.`;
   // Handshake icon appears only while acting as a fiduciary -- it's the
   // "no conflict of interest" signal, so it has nothing to say in the
   // commission/fee state.
@@ -1603,41 +1952,206 @@ function updateFiduciaryHint() {
   feeRatesPanelEl.classList.toggle("visible", !state.fiduciary);
 }
 
+// Hooks SCALAR_FIELDS entries can name in their `onChange`. Looked up by
+// name at commit time -- see the registry comment for why.
+const FIELD_HOOKS = { updateFiduciaryHint };
+
 /* ----------------------------------------------------------------------------
-   9. EVENT WIRING
+   SHAREABLE URL STATE
+   Everything a viewer needs to see the same scenario is packed into the URL
+   hash as short key=value pairs, so a copied link reproduces the exact setup.
+   Scalar keys come from SCALAR_FIELDS (urlKey); the DST list is one `d` key
+   holding comma-separated records separated by semicolons:
+       d=mf,800000,5,45,3,6.5;in,1200000,6,40,3.5,6.5
+         ^category code
+   Written with replaceState so dragging a slider doesn't fill the back button
+   with history entries (and so it never fires our own hashchange listener).
+   ---------------------------------------------------------------------------- */
+const CODE_TO_CATEGORY = Object.fromEntries(
+  Object.entries(CATEGORY_DEFAULTS).map(([key, def]) => [def.code, key])
+);
+
+function encodeState() {
+  const parts = [];
+  for (const f of SCALAR_FIELDS) {
+    const v = state[f.stateKey];
+    if (v === null || v === undefined) continue; // a blank blankable field stays out of the URL entirely
+    parts.push(`${f.urlKey}=${trimNum(v)}`);
+  }
+  parts.push(`fid=${state.fiduciary ? 1 : 0}`);
+  parts.push(`adv=${state.advancedTax ? 1 : 0}`);
+  if (mcToggleEl.checked) parts.push("mc=1");
+  if (state.dsts.length) {
+    parts.push("d=" + state.dsts.map(d => [
+      CATEGORY_DEFAULTS[d.category].code,
+      trimNum(d.amount), trimNum(d.cashOnCash), trimNum(d.leverage),
+      trimNum(d.appreciation), trimNum(d.years),
+    ].join(",")).join(";"));
+  }
+  return parts.join("&");
+}
+
+// Every value is re-clamped on the way in, and the zero-coupon cash-on-cash
+// lock is re-applied here rather than trusted -- a hand-edited link must not
+// be able to smuggle in a state the UI itself would refuse to produce.
+function decodeDsts(raw) {
+  const out = [];
+  for (const rec of String(raw).split(";")) {
+    const p = rec.split(",");
+    if (p.length < 6) continue;
+    const catKey = CODE_TO_CATEGORY[p[0]];
+    if (!catKey) continue;
+    const def = CATEGORY_DEFAULTS[catKey];
+    const num = (v, lo, hi, fallback) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? clamp(n, lo, hi) : fallback;
+    };
+    out.push({
+      id: nextId++,
+      category: catKey,
+      amount: num(p[1], 0, MAX_DOLLAR_FIELD, 0),
+      cashOnCash: def.lockCashOnCash ? 0 : num(p[2], 0, 30, def.cashOnCash),
+      leverage: num(p[3], levMin(def), levMax(def), def.leverage),
+      appreciation: num(p[4], -10, 20, def.appreciation),
+      years: num(p[5], MIN_HOLD, MAX_HOLD, DEFAULT_HOLD_YEARS),
+      collapsed: false,
+    });
+  }
+  return out.length ? out : null;
+}
+
+// Returns true if anything was actually applied, so callers know whether a
+// re-sync is warranted.
+function applyHashState(rawHash) {
+  const hash = String(rawHash || "").replace(/^#/, "");
+  if (!hash) return false;
+  const params = new URLSearchParams(hash);
+  let touched = false;
+
+  for (const f of SCALAR_FIELDS) {
+    if (!params.has(f.urlKey)) continue;
+    const n = Number(params.get(f.urlKey));
+    if (!Number.isFinite(n)) continue;
+    state[f.stateKey] = clamp(n, f.min, f.max);
+    touched = true;
+  }
+  if (params.has("fid")) { state.fiduciary = params.get("fid") === "1"; touched = true; }
+  if (params.has("adv")) { state.advancedTax = params.get("adv") === "1"; touched = true; }
+  if (params.has("d")) {
+    const parsed = decodeDsts(params.get("d"));
+    if (parsed) { state.dsts = parsed; touched = true; }
+  }
+  if (params.has("mc")) {
+    mcToggleEl.checked = params.get("mc") === "1";
+    mcPanelEl.classList.toggle("visible", mcToggleEl.checked);
+    touched = true;
+  }
+  return touched;
+}
+
+let urlTimer = 0;
+function scheduleUrlSync() {
+  clearTimeout(urlTimer);
+  urlTimer = setTimeout(() => {
+    try {
+      history.replaceState(null, "", "#" + encodeState());
+    } catch (err) {
+      // Some embedding contexts (a sandboxed iframe without allow-same-origin,
+      // or a file:// page in certain browsers) reject replaceState. The tool
+      // works fine without a shareable URL, so this is a soft failure -- the
+      // copy button falls back to encodeState() directly.
+    }
+  }, URL_SYNC_DEBOUNCE_MS);
+}
+
+// Push every control back into agreement with `state`. Called after anything
+// that changes state wholesale (a hash load, an iframe hash message).
+function syncAllControls() {
+  for (const f of SCALAR_FIELDS) {
+    const el = document.getElementById(f.id);
+    if (el) el.value = scalarDisplayValue(f);
+  }
+  fiduciaryToggleEl.checked = state.fiduciary;
+  advTaxToggleEl.checked = state.advancedTax;
+  advTaxPanelEl.classList.toggle("visible", state.advancedTax);
+  updateFiduciaryHint();
+  renderCardList();
+  renderResults();
+}
+
+/* ----------------------------------------------------------------------------
+   EVENT WIRING
    ---------------------------------------------------------------------------- */
 
-// Populate the "add DST" category dropdown from CATEGORY_DEFAULTS so new
-// categories automatically show up here with no extra wiring.
-const categoryPickerEl = document.getElementById("categoryPicker");
+// The "add DST" category dropdown is built from CATEGORY_DEFAULTS so new
+// categories show up here with no extra wiring.
 categoryPickerEl.innerHTML = Object.entries(CATEGORY_DEFAULTS)
-  .map(([key, def]) => `<option value="${key}">${def.label}</option>`).join("");
+  .map(([key, def]) => `<option value="${key}">${esc(def.label)}</option>`).join("");
+
+/* ---- SCALAR_FIELDS: build the markup and bind the listeners, all from the
+   registry. Adding a whole-portfolio input needs no code here at all. ---- */
+function scalarDisplayValue(f) {
+  const v = state[f.stateKey];
+  return v === null || v === undefined ? "" : v;
+}
+
+function commitScalar(f, el, normalize) {
+  if (f.blankable && el.value.trim() === "") {
+    state[f.stateKey] = null;
+  } else {
+    const n = clampToField(el, el.value);
+    if (n === null) return; // mid-edit garbage; leave state as it was
+    state[f.stateKey] = n;
+    // Only snap the visible value on commit (blur / Enter / stepper), never
+    // while typing -- rewriting the field mid-keystroke moves the caret.
+    if (normalize && String(n) !== el.value) el.value = n;
+  }
+  const hook = FIELD_HOOKS[f.onChange];
+  if (hook) hook();
+  renderResults();
+  scheduleUrlSync();
+}
+
+function buildScalarFields() {
+  const byMount = {};
+  for (const f of SCALAR_FIELDS) (byMount[f.mount] = byMount[f.mount] || []).push(f);
+
+  for (const mountId of Object.keys(byMount)) {
+    const mount = document.getElementById(mountId);
+    if (!mount) continue;
+    mount.innerHTML = byMount[mountId].map(f => numberFieldHTML({
+      id: f.id, label: f.label, value: scalarDisplayValue(f),
+      min: f.min, max: f.max, step: f.step,
+      prefix: f.prefix, suffix: f.suffix,
+    })).join("");
+  }
+
+  for (const f of SCALAR_FIELDS) {
+    const el = document.getElementById(f.id);
+    if (!el) continue;
+    el.addEventListener("input", () => commitScalar(f, el, false));
+    el.addEventListener("change", () => commitScalar(f, el, true));
+  }
+}
 
 document.getElementById("addDstBtn").addEventListener("click", () => {
   state.dsts.push(makeDst(categoryPickerEl.value));
   renderCardList();
   renderResults();
-});
-
-document.getElementById("totalProceeds").addEventListener("input", (e) => {
-  state.totalProceeds = Math.max(0, Number(e.target.value) || 0);
-  renderResults();
-});
-
-capGainsRateEl.addEventListener("input", (e) => {
-  state.capGainsRate = Math.max(0, Number(e.target.value) || 0);
-  renderResults();
+  scheduleUrlSync();
 });
 
 mcToggleEl.addEventListener("change", () => {
   mcPanelEl.classList.toggle("visible", mcToggleEl.checked);
-  if (mcToggleEl.checked) renderMonteCarlo(state.upfrontFeeRate + state.placementFeeRate);
+  if (mcToggleEl.checked) scheduleMonteCarlo();
+  scheduleUrlSync();
 });
 
 fiduciaryToggleEl.addEventListener("change", () => {
   state.fiduciary = fiduciaryToggleEl.checked;
   updateFiduciaryHint();
   renderResults();
+  scheduleUrlSync();
 });
 
 expandAllBtnEl.addEventListener("click", () => {
@@ -1653,58 +2167,7 @@ advTaxToggleEl.addEventListener("change", () => {
   state.advancedTax = advTaxToggleEl.checked;
   advTaxPanelEl.classList.toggle("visible", state.advancedTax);
   renderResults();
-});
-
-// Debt on relinquished property is a default field (alongside Total 1031
-// proceeds) since debt-relief boot always applies, not just under
-// Advanced -- built via numberFieldHTML() like the per-DST fields, into
-// its placeholder in the Exchange proceeds card.
-relinquishedDebtFieldWrapEl.innerHTML = numberFieldHTML({ id: "relinquishedDebt", label: "Debt on relinquished property", value: state.relinquishedDebt, min: 0, max: 100000000, step: 10000, prefix: "$" });
-document.getElementById("relinquishedDebt").addEventListener("input", (e) => {
-  state.relinquishedDebt = Math.max(0, Number(e.target.value) || 0);
-  renderResults();
-});
-
-// The advanced-tax fields (accumulated depreciation, recapture rate) and
-// the non-fiduciary fee-rate fields are each a fixed, non-repeating set --
-// built once via numberFieldHTML() at init (same helper the per-DST cards
-// use) rather than duplicating markup by hand, then wired up like any
-// other field below.
-advTaxFieldsWrapEl.innerHTML = `
-  <div class="adv-tax-fields">
-    ${numberFieldHTML({ id: "accumDepreciation", label: "Accumulated depreciation", value: state.accumulatedDepreciation, min: 0, max: 100000000, step: 10000, prefix: "$" })}
-    ${numberFieldHTML({ id: "depRecaptureRate", label: "Recapture rate", value: state.depRecaptureRate, min: 0, max: 100, step: 1, suffix: "%" })}
-  </div>`;
-document.getElementById("accumDepreciation").addEventListener("input", (e) => {
-  state.accumulatedDepreciation = Math.max(0, Number(e.target.value) || 0);
-  renderResults();
-});
-document.getElementById("depRecaptureRate").addEventListener("input", (e) => {
-  state.depRecaptureRate = Math.max(0, Number(e.target.value) || 0);
-  renderResults();
-});
-
-feeRatesFieldsWrapEl.innerHTML = `
-  ${numberFieldHTML({ id: "upfrontFeeRate", label: "Upfront fee", value: state.upfrontFeeRate, min: 0, max: 100, step: 0.5, suffix: "%" })}
-  ${numberFieldHTML({ id: "placementFeeRate", label: "Placement fee", value: state.placementFeeRate, min: 0, max: 100, step: 0.5, suffix: "%" })}`;
-document.getElementById("upfrontFeeRate").addEventListener("input", (e) => {
-  state.upfrontFeeRate = Math.max(0, Number(e.target.value) || 0);
-  updateFiduciaryHint();
-  renderResults();
-});
-document.getElementById("placementFeeRate").addEventListener("input", (e) => {
-  state.placementFeeRate = Math.max(0, Number(e.target.value) || 0);
-  updateFiduciaryHint();
-  renderResults();
-});
-
-// Cost basis drives the "If you'd sold instead of exchanged" comparison at
-// the bottom of Projected results -- same build-once-via-numberFieldHTML
-// pattern as the fields above.
-costBasisFieldWrapEl.innerHTML = numberFieldHTML({ id: "costBasis", label: "Cost basis", value: state.costBasis, min: 0, max: 100000000, step: 10000, prefix: "$" });
-document.getElementById("costBasis").addEventListener("input", (e) => {
-  state.costBasis = Math.max(0, Number(e.target.value) || 0);
-  renderResults();
+  scheduleUrlSync();
 });
 
 // Whole-panel collapse: click (or Enter/Space) anywhere on a .panel-head
@@ -1733,12 +2196,14 @@ dstListEl.addEventListener("click", (e) => {
     state.dsts = state.dsts.filter(d => d.id !== id);
     renderCardList();
     renderResults();
+    scheduleUrlSync();
   } else if (btn.dataset.action === "duplicate") {
     const original = state.dsts.find(d => d.id === id);
     if (original) {
       state.dsts.push({ ...original, id: nextId++ });
       renderCardList();
       renderResults();
+      scheduleUrlSync();
     }
   } else if (btn.dataset.action === "toggle-collapse") {
     const dst = state.dsts.find(d => d.id === id);
@@ -1749,7 +2214,9 @@ dstListEl.addEventListener("click", (e) => {
   }
 });
 
-dstListEl.addEventListener("input", (e) => {
+// Per-DST field edits. `normalize` is false while typing and true on commit,
+// same contract as commitScalar above.
+function onDstFieldEvent(e, normalize) {
   const el = e.target;
   const field = el.dataset.field;
   if (!field) return;
@@ -1757,19 +2224,25 @@ dstListEl.addEventListener("input", (e) => {
   const dst = state.dsts.find(d => d.id === id);
   if (!dst) return;
 
-  dst[field] = Number(el.value);
+  // Clamped to the element's own min/max. Without this, typing (as opposed to
+  // stepping) bypassed the bounds entirely -- a negative allocated amount or a
+  // 500%/yr appreciation rate went straight into the model.
+  const n = clampToField(el, el.value);
+  if (n === null) return;
+  dst[field] = n;
+  if (normalize && String(n) !== el.value) el.value = n;
 
   // Live readouts for the two range sliders, and a redrawn bell curve when
   // the holding period moves -- everything else just needs renderResults().
   if (field === "leverage") {
     const readout = dstListEl.querySelector(`[data-readout="leverage"][data-id="${id}"]`);
-    if (readout) readout.textContent = dst.leverage + "%";
+    if (readout) readout.textContent = trimNum(dst.leverage) + "%";
   }
   if (field === "years") {
     const readout = dstListEl.querySelector(`[data-readout="years"][data-id="${id}"]`);
-    if (readout) readout.textContent = dst.years;
+    if (readout) readout.textContent = trimNum(dst.years);
     const holder = dstListEl.querySelector(`[data-holder="years"][data-id="${id}"]`);
-    if (holder) holder.innerHTML = bellCurveSVG(dst.years, 280, 64, CATEGORY_DEFAULTS[dst.category].colorVar);
+    if (holder) holder.innerHTML = bellCurveSVG(dst.years, BELLCURVE_W, BELLCURVE_H, CATEGORY_DEFAULTS[dst.category].colorVar);
   }
   // Below-minimum warning has to be patched live too (typing shouldn't
   // require a full card rebuild, which would drop focus mid-keystroke --
@@ -1786,13 +2259,18 @@ dstListEl.addEventListener("input", (e) => {
   }
 
   renderResults();
-});
+  scheduleUrlSync();
+}
+dstListEl.addEventListener("input", (e) => onDstFieldEvent(e, false));
+dstListEl.addEventListener("change", (e) => onDstFieldEvent(e, true));
 
 // Stepper buttons live both inside #dstList (per-DST fields) and outside it
-// (total proceeds), so this is bound once at the document level rather than
-// duplicated per container. Clicking one nudges its target <input> by one
-// `step` (respecting min/max), then dispatches a real 'input' event so the
-// existing per-field listeners above do the actual state update + re-render.
+// (the SCALAR_FIELDS inputs), so this is bound once at the document level
+// rather than duplicated per container. Clicking one nudges its target
+// <input> by one `step` (respecting min/max), then dispatches a real 'change'
+// event so the existing per-field listeners above do the state update and
+// re-render. 'change' rather than 'input' because a stepper click IS a
+// commit -- there's no half-typed intermediate state to protect.
 document.addEventListener("click", (e) => {
   const btn = e.target.closest(".stepper-btn");
   if (!btn) return;
@@ -1803,16 +2281,58 @@ document.addEventListener("click", (e) => {
   const max = input.max !== "" ? Number(input.max) : Infinity;
   const dir = btn.dataset.step === "up" ? 1 : -1;
   let next = (Number(input.value) || 0) + dir * step;
-  next = Math.min(max, Math.max(min, next));
+  next = clamp(next, min, max);
   // Round off floating-point drift from repeated 0.1 steps (5.1 + 0.1 !== 5.2 in IEEE754).
   const decimals = (String(step).split(".")[1] || "").length;
   next = Number(next.toFixed(decimals));
   input.value = next;
-  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+});
+
+// Copy a link that reproduces this exact scenario. In a cross-origin iframe
+// the address bar shows the WRAPPER's URL, not this one, so the hash is
+// invisible to the viewer -- without this button the shareable URL would be
+// a feature nobody embedded could reach.
+copyLinkBtnEl.addEventListener("click", async () => {
+  const hash = "#" + encodeState();
+  const base = PMR_WRAPPER_URL || (location.origin === "null" ? "" : location.origin + location.pathname);
+  const link = base + hash;
+  const defaultHint = copyLinkHintEl.textContent;
+  try {
+    await navigator.clipboard.writeText(link);
+    copyLinkHintEl.textContent = "Copied — that link reopens this exact scenario.";
+  } catch (err) {
+    // Clipboard access needs a secure context and, in an iframe, clipboard-write
+    // permission. When it's refused, put the link in the address bar instead so
+    // it can still be copied by hand rather than failing silently.
+    try { history.replaceState(null, "", hash); } catch (e2) { /* nothing further to fall back to */ }
+    copyLinkHintEl.textContent = "Couldn't reach the clipboard — the link is in your address bar, copy it from there.";
+  }
+  setTimeout(() => { copyLinkHintEl.textContent = defaultHint; }, COPY_FEEDBACK_MS);
 });
 
 /* ----------------------------------------------------------------------------
-   10. TOUCH / MOBILE DETECTION
+   IFRAME AWARENESS
+   The tool ships inside a cross-origin iframe on the PMR site. Same-origin
+   policy means a hash on the OUTER page can never be read from in here, so
+   two mechanisms cover it: the wrapper appends the hash to the iframe src
+   (handled by the normal load path below), and the wrapper can also post it.
+   Always check e.origin against the allowlist before acting on a message.
+   ---------------------------------------------------------------------------- */
+window.addEventListener("message", (e) => {
+  if (!PMR_ORIGINS.includes(e.origin)) return;
+  if (!e.data || e.data.type !== "pmr-hash" || typeof e.data.hash !== "string") return;
+  if (applyHashState(e.data.hash)) syncAllControls();
+});
+
+// Also listen for hashchange, not just the hash present at load. Our own
+// writes use replaceState, which does not fire this -- so there's no loop.
+window.addEventListener("hashchange", () => {
+  if (applyHashState(location.hash)) syncAllControls();
+});
+
+/* ----------------------------------------------------------------------------
+   TOUCH / MOBILE DETECTION
    Adds an `is-touch` class the CSS above uses to enlarge steppers, sliders,
    and the fiduciary switch. Deliberately keyed off pointer capability
    (matchMedia "pointer: coarse") rather than viewport width -- a narrow
@@ -1823,16 +2343,24 @@ const isTouchDevice = window.matchMedia("(pointer: coarse)").matches || "ontouch
 document.body.classList.toggle("is-touch", isTouchDevice);
 
 /* ----------------------------------------------------------------------------
-   11. INIT
-   Seed with a two-DST example (a $1.2M industrial + $0.8M multifamily
-   position) so the tool is never a blank slate on first load -- remove or
-   adjust freely, this is just a friendlier starting point.
+   INIT
+   Seeds a two-DST example (a $1.2M industrial + $0.8M multifamily position)
+   so the tool is never a blank slate on first load -- remove or adjust
+   freely, this is just a friendlier starting point. Any scenario in the URL
+   hash replaces it.
    ---------------------------------------------------------------------------- */
-state.dsts.push({ ...makeDst("industrial"), amount: 1200000 });
-state.dsts.push({ ...makeDst("multifamily"), amount: 800000 });
-renderCardList();
-renderResults();
-updateFiduciaryHint();
+function init() {
+  buildScalarFields();
+
+  state.dsts.push({ ...makeDst("industrial"), amount: 1200000 });
+  state.dsts.push({ ...makeDst("multifamily"), amount: 800000 });
+
+  // A shared link wins over the seeded example.
+  applyHashState(location.hash);
+
+  syncAllControls();
+}
+init();
 </script>
 </body>
 </html>
