@@ -399,6 +399,30 @@ button:focus-visible,
 .boot-detail strong { color: var(--text-primary); }
 .boot-detail.empty { color: var(--text-muted); }
 
+/* ---- Year-by-year yield schedule (inside each DST card) --------------------
+   A <details> so the ten-row table stays out of the way until someone wants
+   it; the single cash-on-cash field above it fills every year at once. */
+.yield-schedule { grid-column: 1 / -1; }
+.yield-schedule summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.yield-table { border-collapse: collapse; margin-top: 8px; font-size: 0.84rem; }
+.yield-table th { text-align: left; font-weight: 600; color: var(--text-muted); padding: 4px 8px 4px 0; }
+.yield-table td { padding: 3px 8px 3px 0; }
+.yield-table input[type="number"] {
+  width: 84px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-inset);
+  font: inherit;
+}
+.yield-table tr.past-hold td { opacity: 0.5; }
+.dist-tax-row { margin-bottom: 14px; max-width: 260px; }
+
 /* ---- Below-minimum DST allocation warning ---------------------------------- */
 .min-warning { font-size: 0.78rem; color: var(--warning-text); margin-top: 4px; }
 
@@ -801,7 +825,14 @@ footer.disclaimer .pmr-link { display: inline-block; margin-top: 4px; font-weigh
       <span class="collapse-btn" aria-hidden="true"></span>
     </div>
     <div class="panel-body">
-    <p class="hint">Based on each DST's cash-on-cash return, leverage, appreciation rate, and assumed holding period.</p>
+    <p class="hint">Based on each DST's year-by-year yield, loan-to-value, appreciation rate, and assumed holding period.</p>
+
+    <!-- Rate applied to the part of each year's distributions that ISN'T
+         tax-sheltered (see each card's year-by-year schedule). Only feeds the
+         "After-tax cash flow" tile; every other figure here is pre-tax. -->
+    <div class="dist-tax-row">
+      <div id="ordIncomeFieldWrap" class="field-mount"></div>
+    </div>
 
     <div class="stat-grid" id="statGrid"></div>
 
@@ -1034,6 +1065,10 @@ const HOLD_PERIOD_WEIGHTS = { 4: 4, 5: 10, 6: 22, 7: 28, 8: 18, 9: 12, 10: 6 };
 const MIN_HOLD = 4;
 const MAX_HOLD = 10;
 const DEFAULT_HOLD_YEARS = 6.5; // the deterministic "expected" point estimate
+// Length of each DST's year-by-year yield / tax-shelter schedule. Tied to
+// MAX_HOLD on purpose: the schedule has to cover the longest hold the slider
+// (and the Monte Carlo) can reach.
+const SCHEDULE_YEARS = MAX_HOLD;
 
 // Shared loan-to-value band, %, used by every category that doesn't state its
 // own. Must stay below 100: LTV 100% means zero equity, and the model divides
@@ -1073,6 +1108,19 @@ const DEFAULT_CAP_GAINS_RATE_PCT = 20;
 // maximum federal rate on unrecaptured Section 1250 gain (state tax isn't
 // modeled here, same as the capital gains rate above).
 const DEFAULT_DEP_RECAPTURE_RATE_PCT = 25;
+
+// Default rate on the NON-sheltered part of DST distributions, which is
+// ordinary income. 37% is the top federal bracket; like the rates above it
+// leaves out state tax and the 3.8% NIIT. Just the starting value of the
+// editable "Tax rate on distributions" field.
+const DEFAULT_ORDINARY_RATE_PCT = 37;
+
+// Default share of each year's distribution sheltered from current tax
+// (by depreciation passed through to the investor). 0, not a typical-looking
+// figure: the real number comes from the specific offering's tax projections,
+// and a plausible-looking default would be the tool inventing its own most
+// flattering input -- same reasoning as the blank cost basis field.
+const DEFAULT_SHELTERED_PCT = 0;
 
 // Typical minimum check size sponsors set per DST (commonly reported in the
 // $25,000-$100,000 range). Purely an informational nudge -- allocating less
@@ -1120,6 +1168,7 @@ const SCALAR_FIELDS = [
   { id: "depRecaptureRate",  stateKey: "depRecaptureRate",        urlKey: "dr", label: "Recapture rate",                min: 0, max: 100, step: 1,   suffix: "%", mount: "advTaxFieldsWrap" },
   { id: "upfrontFeeRate",    stateKey: "upfrontFeeRate",          urlKey: "uf", label: "Upfront fee",                   min: 0, max: 100, step: 0.5, suffix: "%", mount: "feeRatesFieldsWrap", onChange: "updateFiduciaryHint" },
   { id: "placementFeeRate",  stateKey: "placementFeeRate",        urlKey: "pf", label: "Placement fee",                 min: 0, max: 100, step: 0.5, suffix: "%", mount: "feeRatesFieldsWrap", onChange: "updateFiduciaryHint" },
+  { id: "ordinaryRate",      stateKey: "ordinaryRate",            urlKey: "or", label: "Tax rate on distributions",     min: 0, max: 100, step: 1,   suffix: "%", mount: "ordIncomeFieldWrap" },
   { id: "costBasis",         stateKey: "costBasis",               urlKey: "cb", label: "Cost basis",                    min: 0, max: MAX_DOLLAR_FIELD, step: 10000, prefix: "$", mount: "costBasisFieldWrap", blankable: true },
 ];
 
@@ -1171,6 +1220,7 @@ const state = {
   upfrontFeeRate: DEFAULT_UPFRONT_FEE_PCT,     // editable, only matters while !fiduciary
   placementFeeRate: DEFAULT_PLACEMENT_FEE_PCT, // editable, only matters while !fiduciary
   capGainsRate: DEFAULT_CAP_GAINS_RATE_PCT,    // applied to any boot (unallocated proceeds taken as cash)
+  ordinaryRate: DEFAULT_ORDINARY_RATE_PCT,     // applied to the non-sheltered part of DST distributions
   // null, NOT 0. A zero cost basis is the maximum-gain assumption -- it claims
   // the property was acquired for nothing -- so defaulting to it would print a
   // large, confident "tax deferred by exchanging" figure before the user has
@@ -1279,9 +1329,24 @@ function computeDst(dst, fiduciary, totalFeePct) {
   // annual/monthly are what's shown in the results panel, since "how much
   // income does this throw off" is more intuitive per year or per month
   // than as one lump sum spread over several uncertain years.
-  const annualCashFlow = equity * (dst.cashOnCash / 100);
+  //
+  // Year by year: each DST carries a SCHEDULE_YEARS-long yield schedule
+  // (dst.yields, % of net equity per year) and a matching share of each
+  // year's distribution that's tax-sheltered (dst.sheltered, %). The
+  // cumulative total walks that schedule up to the holding period, counting
+  // a part-year (the 6.5-yr default) pro rata. The headline annual/monthly
+  // figures are YEAR 1's, the number an investor would first see.
+  const yields = dst.yields || uniformSchedule(dst.cashOnCash);
+  const sheltered = dst.sheltered || uniformSchedule(DEFAULT_SHELTERED_PCT);
+  const annualCashFlow = equity * (yields[0] / 100);
   const monthlyCashFlow = annualCashFlow / 12;
-  const cashFlowIncome = annualCashFlow * dst.years;
+  let cashFlowIncome = 0, shelteredIncome = 0;
+  for (let t = 0; t < SCHEDULE_YEARS && t < dst.years; t++) {
+    const share = Math.min(1, dst.years - t); // 1 for whole years, 0.5 for the last half-year
+    const cf = equity * (yields[t] / 100) * share;
+    cashFlowIncome += cf;
+    shelteredIncome += cf * (sheltered[t] / 100);
+  }
 
   // Appreciation gain, compounded annually on the leveraged value.
   const growthFactor = Math.pow(1 + dst.appreciation / 100, dst.years);
@@ -1300,7 +1365,13 @@ function computeDst(dst, fiduciary, totalFeePct) {
   const totalProfit = finalValue - grossAmount; // profit relative to what was originally committed (fee included as a drag)
   const annualizedReturn = dst.years > 0 && grossAmount > 0 ? Math.pow(finalValue / grossAmount, 1 / dst.years) - 1 : 0;
 
-  return { grossAmount, feesPaid, equity, leveragedValue, debt, annualCashFlow, monthlyCashFlow, cashFlowIncome, appreciationGain, debtPaydown, totalProfit, finalValue, annualizedReturn };
+  return { grossAmount, feesPaid, equity, leveragedValue, debt, annualCashFlow, monthlyCashFlow, cashFlowIncome, shelteredIncome, appreciationGain, debtPaydown, totalProfit, finalValue, annualizedReturn };
+}
+
+// A schedule with the same value every year -- what a new card starts with,
+// and what typing in the single cash-on-cash field resets the yields to.
+function uniformSchedule(value) {
+  return new Array(SCHEDULE_YEARS).fill(value);
 }
 
 // Balance left on a level-payment, monthly-amortizing loan after `years`.
@@ -1324,7 +1395,7 @@ function remainingLoanBalance(principal, ratePct, amortYears, years) {
 // instead.
 function computePortfolio(dsts, fiduciary, totalFeePct) {
   if (dsts.length === 0) {
-    return { totalGross: 0, totalFees: 0, totalEquity: 0, totalAnnualCashFlow: 0, totalMonthlyCashFlow: 0, totalCashFlow: 0, totalAppreciation: 0, totalDebtPaydown: 0, totalProfit: 0, totalFinalValue: 0, blendedAnnualizedReturn: 0, weightedYears: 0, rows: [] };
+    return { totalGross: 0, totalFees: 0, totalEquity: 0, totalAnnualCashFlow: 0, totalMonthlyCashFlow: 0, totalCashFlow: 0, totalShelteredIncome: 0, totalAppreciation: 0, totalDebtPaydown: 0, totalProfit: 0, totalFinalValue: 0, blendedAnnualizedReturn: 0, weightedYears: 0, rows: [] };
   }
   const rows = dsts.map(d => ({ dst: d, ...computeDst(d, fiduciary, totalFeePct) }));
   const totalGross = rows.reduce((s, r) => s + r.grossAmount, 0);
@@ -1336,6 +1407,7 @@ function computePortfolio(dsts, fiduciary, totalFeePct) {
   const totalAnnualCashFlow = rows.reduce((s, r) => s + r.annualCashFlow, 0);
   const totalMonthlyCashFlow = rows.reduce((s, r) => s + r.monthlyCashFlow, 0);
   const totalCashFlow = rows.reduce((s, r) => s + r.cashFlowIncome, 0);
+  const totalShelteredIncome = rows.reduce((s, r) => s + r.shelteredIncome, 0);
   const totalAppreciation = rows.reduce((s, r) => s + r.appreciationGain, 0);
   const totalDebtPaydown = rows.reduce((s, r) => s + r.debtPaydown, 0);
   const totalFinalValue = rows.reduce((s, r) => s + r.finalValue, 0);
@@ -1346,7 +1418,7 @@ function computePortfolio(dsts, fiduciary, totalFeePct) {
   const equityMultiple = totalGross > 0 ? totalFinalValue / totalGross : 0;
   const blendedAnnualizedReturn = weightedYears > 0 ? Math.pow(equityMultiple, 1 / weightedYears) - 1 : 0;
 
-  return { totalGross, totalFees, totalEquity, totalAnnualCashFlow, totalMonthlyCashFlow, totalCashFlow, totalAppreciation, totalDebtPaydown, totalProfit, totalFinalValue, blendedAnnualizedReturn, weightedYears, rows };
+  return { totalGross, totalFees, totalEquity, totalAnnualCashFlow, totalMonthlyCashFlow, totalCashFlow, totalShelteredIncome, totalAppreciation, totalDebtPaydown, totalProfit, totalFinalValue, blendedAnnualizedReturn, weightedYears, rows };
 }
 
 /* ----------------------------------------------------------------------------
@@ -1445,6 +1517,8 @@ function makeDst(categoryKey) {
     leverage: def.leverage,
     appreciation: def.appreciation,
     years: DEFAULT_HOLD_YEARS,
+    yields: uniformSchedule(def.cashOnCash),
+    sheltered: uniformSchedule(DEFAULT_SHELTERED_PCT),
     ...loanFieldsFor(def),
     collapsed: false,
   };
@@ -1735,6 +1809,30 @@ function dstSummaryHTML(dst) {
   return `${fmtUSD.format(dst.amount)} &middot; ${esc(trimNum(dst.cashOnCash))}% CoC &middot; ${esc(trimNum(dst.leverage))}% LTV &middot; ${esc(trimNum(dst.years))}yr hold`;
 }
 
+// The ten-row yield / tax-sheltered table. Rows past the holding period are
+// dimmed rather than hidden: they still matter to the Monte Carlo, which can
+// draw a longer hold, and hiding them would make the table jump as the
+// holding-period slider moves.
+function yieldScheduleHTML(dst) {
+  const rows = dst.yields.map((y, t) => `
+      <tr class="${t >= dst.years ? "past-hold" : ""}" data-year-row="${t}">
+        <td>Year ${t + 1}</td>
+        <td><input type="number" min="0" max="30" step="0.1" value="${y}" aria-label="Year ${t + 1} yield, percent"
+          data-field="yields" data-year="${t}" data-id="${dst.id}"></td>
+        <td><input type="number" min="0" max="100" step="1" value="${dst.sheltered[t]}" aria-label="Year ${t + 1} tax-sheltered share, percent"
+          data-field="sheltered" data-year="${t}" data-id="${dst.id}"></td>
+      </tr>`).join("");
+  return `
+        <details class="yield-schedule" data-id="${dst.id}"${dst.scheduleOpen ? " open" : ""}>
+          <summary>Year-by-year yield &amp; tax shelter</summary>
+          <table class="yield-table">
+            <thead><tr><th>Year</th><th>Yield, %/yr</th><th>Tax-sheltered, %</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <p class="field-note">Yield is the distribution as a % of net equity. Tax-sheltered is the share of that year's distribution not taxed currently (typically offset by depreciation). Sheltered income usually lowers your basis, so more of it is taxed when the property sells.</p>
+        </details>`;
+}
+
 function renderCardList() {
   if (state.dsts.length === 0) {
     dstListEl.innerHTML = `<p class="empty-state">No DSTs added yet. Pick a category above and click "+ Add DST" to start building a portfolio.</p>`;
@@ -1762,7 +1860,7 @@ function renderCardList() {
           extraAttrs: `data-field="amount" data-id="${dst.id}"`,
         })}
         ${numberFieldHTML({
-          id: `coc-${dst.id}`, label: "Cash-on-cash return", value: dst.cashOnCash,
+          id: `coc-${dst.id}`, label: "Cash-on-cash (sets all years)", value: dst.cashOnCash,
           min: 0, max: 30, step: 0.1, suffix: "%/yr",
           extraAttrs: `data-field="cashOnCash" data-id="${dst.id}"`,
           disabled: !!def.lockCashOnCash,
@@ -1790,6 +1888,7 @@ function renderCardList() {
           min: -10, max: 20, step: 0.1, suffix: "%/yr",
           extraAttrs: `data-field="appreciation" data-id="${dst.id}"`,
         })}
+        ${def.lockCashOnCash ? "" : yieldScheduleHTML(dst)}
         <div class="field years-field">
           <label class="field-label" for="yrs-${dst.id}">Assumed holding period: <span data-readout="years" data-id="${dst.id}">${esc(trimNum(dst.years))}</span> yrs</label>
           <input type="range" id="yrs-${dst.id}" min="${MIN_HOLD}" max="${MAX_HOLD}" step="0.5" data-field="years" data-id="${dst.id}" value="${dst.years}">
@@ -1821,13 +1920,19 @@ function renderResults() {
   // table column are shown only when one is in the portfolio -- otherwise it
   // would be a permanent $0 taking width from the columns that matter.
   const hasPaydown = state.dsts.some(d => d.loanRate !== undefined);
+  const afterTaxCashFlow = portfolio.totalCashFlow
+    - (portfolio.totalCashFlow - portfolio.totalShelteredIncome) * (state.ordinaryRate / 100);
   breakdownTableEl.classList.toggle("no-paydown", !hasPaydown);
 
   // Stat tiles
   const tiles = [
     { label: "Net equity invested", value: fmtUSD.format(portfolio.totalEquity) },
     { label: "Upfront/Placement Fees", value: fmtUSD.format(portfolio.totalFees) },
-    { label: "Cash flow income", value: `${fmtUSD.format(portfolio.totalAnnualCashFlow)}/yr`, sub: `${fmtUSD.format(portfolio.totalMonthlyCashFlow)}/mo` },
+    { label: "Cash flow income (year 1)", value: `${fmtUSD.format(portfolio.totalAnnualCashFlow)}/yr`, sub: `${fmtUSD.format(portfolio.totalMonthlyCashFlow)}/mo` },
+    // Over the whole hold: distributions minus tax on the part that isn't
+    // sheltered. The one after-tax figure on the page -- everything else is
+    // pre-tax -- so the sub-line says what it is.
+    { label: "After-tax cash flow", value: fmtUSD.format(afterTaxCashFlow), sub: `over the hold, ${fmtUSD.format(portfolio.totalShelteredIncome)} sheltered` },
     { label: "Appreciation gain", value: fmtUSD.format(portfolio.totalAppreciation) },
     ...(hasPaydown ? [{ label: "Debt paydown", value: fmtUSD.format(portfolio.totalDebtPaydown) }] : []),
     { label: "Total profit", value: fmtUSD.format(portfolio.totalProfit), good: true },
@@ -2059,6 +2164,12 @@ const FIELD_HOOKS = { updateFiduciaryHint };
        l=mf,800000,5,45,3,6.5;zc,1200000,0,75,3,6.5,6,20
          ^category code        ^LTV          ^loan rate, amortization term
                                               (amortizing categories only)
+   The year-by-year schedules ride in two more keys, one record per DST in
+   the same order as `l`, years joined by "_":
+       ys=5_5_5.2_5.4_...;;...     sh=80_80_75_...;;...
+   A record is left EMPTY when it's the default (yields all equal to that
+   DST's cash-on-cash; sheltered all 0), so a plain link stays short; a
+   missing key or empty record decodes back to that default.
    LEGACY: links made before leverage became loan-to-value carry the list
    under `d` instead, with leverage as debt-on-equity. Those are still read,
    and converted (LTV = DE / (1 + DE)) so an old link shows the same
@@ -2089,6 +2200,10 @@ function encodeState() {
       trimNum(d.appreciation), trimNum(d.years),
       ...(d.loanRate === undefined ? [] : [trimNum(d.loanRate), trimNum(d.amortYears)]),
     ].join(",")).join(";"));
+    const ys = state.dsts.map(d => d.yields.every(y => y === d.cashOnCash) ? "" : d.yields.map(trimNum).join("_"));
+    const sh = state.dsts.map(d => d.sheltered.every(v => v === DEFAULT_SHELTERED_PCT) ? "" : d.sheltered.map(trimNum).join("_"));
+    if (ys.some(Boolean)) parts.push("ys=" + ys.join(";"));
+    if (sh.some(Boolean)) parts.push("sh=" + sh.join(";"));
   }
   return parts.join("&");
 }
@@ -2096,10 +2211,22 @@ function encodeState() {
 // Every value is re-clamped on the way in, and the zero-coupon cash-on-cash
 // lock is re-applied here rather than trusted -- a hand-edited link must not
 // be able to smuggle in a state the UI itself would refuse to produce.
-function decodeDsts(raw, legacyDebtOnEquity = false) {
+function decodeDsts(raw, legacyDebtOnEquity = false, rawYields = "", rawSheltered = "") {
   const out = [];
+  // Schedules line up with the DST records by position, so split them once.
+  const yieldRecs = String(rawYields).split(";");
+  const shelterRecs = String(rawSheltered).split(";");
+  const schedule = (rec, lo, hi, fallback) => {
+    const vals = rec ? rec.split("_") : [];
+    return uniformSchedule(fallback).map((f, t) => {
+      const n = vals[t] === undefined || vals[t] === "" ? NaN : Number(vals[t]);
+      return Number.isFinite(n) ? clamp(n, lo, hi) : f;
+    });
+  };
+  let recIndex = -1;
   for (const rec of String(raw).split(";")) {
     const p = rec.split(",");
+    recIndex++;
     if (p.length < 6) continue;
     const catKey = CODE_TO_CATEGORY[p[0]];
     if (!catKey) continue;
@@ -2108,6 +2235,8 @@ function decodeDsts(raw, legacyDebtOnEquity = false) {
       const n = Number(v);
       return Number.isFinite(n) ? clamp(n, lo, hi) : fallback;
     };
+    const cashOnCash = def.lockCashOnCash ? 0 : num(p[2], 0, 30, def.cashOnCash);
+    const yields = def.lockCashOnCash ? uniformSchedule(0) : schedule(yieldRecs[recIndex], 0, 30, cashOnCash);
     // Legacy `d` links stored debt-on-equity; convert before clamping.
     const de = Number(p[3]);
     const rawLeverage = legacyDebtOnEquity && Number.isFinite(de) && de > -100
@@ -2117,10 +2246,12 @@ function decodeDsts(raw, legacyDebtOnEquity = false) {
       id: nextId++,
       category: catKey,
       amount: num(p[1], 0, MAX_DOLLAR_FIELD, 0),
-      cashOnCash: def.lockCashOnCash ? 0 : num(p[2], 0, 30, def.cashOnCash),
+      cashOnCash: yields[0],
       leverage: Math.round(num(rawLeverage, levMin(def), levMax(def), def.leverage) * 10) / 10,
       appreciation: num(p[4], -10, 20, def.appreciation),
       years: num(p[5], MIN_HOLD, MAX_HOLD, DEFAULT_HOLD_YEARS),
+      yields,
+      sheltered: schedule(shelterRecs[recIndex], 0, 100, DEFAULT_SHELTERED_PCT),
       ...loanFieldsFor(def,
         num(p[6], LOAN_RATE_MIN, LOAN_RATE_MAX, def.loanRate),
         num(p[7], AMORT_YEARS_MIN, AMORT_YEARS_MAX, def.amortYears)),
@@ -2148,7 +2279,9 @@ function applyHashState(rawHash) {
   if (params.has("fid")) { state.fiduciary = params.get("fid") === "1"; touched = true; }
   if (params.has("adv")) { state.advancedTax = params.get("adv") === "1"; touched = true; }
   if (params.has("l") || params.has("d")) {
-    const parsed = params.has("l") ? decodeDsts(params.get("l")) : decodeDsts(params.get("d"), true);
+    const parsed = params.has("l")
+      ? decodeDsts(params.get("l"), false, params.get("ys") || "", params.get("sh") || "")
+      : decodeDsts(params.get("d"), true);
     if (parsed) { state.dsts = parsed; touched = true; }
   }
   if (params.has("mc")) {
@@ -2310,7 +2443,9 @@ dstListEl.addEventListener("click", (e) => {
   } else if (btn.dataset.action === "duplicate") {
     const original = state.dsts.find(d => d.id === id);
     if (original) {
-      state.dsts.push({ ...original, id: nextId++ });
+      // The schedules are arrays: copy them, or the duplicate and the
+      // original would share (and co-edit) one schedule.
+      state.dsts.push({ ...original, id: nextId++, yields: [...original.yields], sheltered: [...original.sheltered] });
       renderCardList();
       renderResults();
       scheduleUrlSync();
@@ -2339,8 +2474,27 @@ function onDstFieldEvent(e, normalize) {
   // 500%/yr appreciation rate went straight into the model.
   const n = clampToField(el, el.value);
   if (n === null) return;
-  dst[field] = n;
+  if (field === "yields" || field === "sheltered") {
+    // One cell of the year-by-year schedule. Year 1's yield is mirrored into
+    // cashOnCash so the single field above (and the collapsed summary) show it.
+    const t = Number(el.dataset.year);
+    dst[field][t] = n;
+    if (field === "yields" && t === 0) {
+      dst.cashOnCash = n;
+      const cocEl = document.getElementById(`coc-${id}`);
+      if (cocEl) cocEl.value = n;
+    }
+  } else {
+    dst[field] = n;
+  }
   if (normalize && String(n) !== el.value) el.value = n;
+
+  // The single cash-on-cash field fills every year of the schedule. Patched
+  // in place rather than re-rendering the card, which would drop focus.
+  if (field === "cashOnCash") {
+    dst.yields = uniformSchedule(n);
+    dstListEl.querySelectorAll(`input[data-field="yields"][data-id="${id}"]`).forEach(inp => { inp.value = n; });
+  }
 
   // Live readouts for the two range sliders, and a redrawn bell curve when
   // the holding period moves -- everything else just needs renderResults().
@@ -2353,6 +2507,9 @@ function onDstFieldEvent(e, normalize) {
     if (readout) readout.textContent = trimNum(dst.years);
     const holder = dstListEl.querySelector(`[data-holder="years"][data-id="${id}"]`);
     if (holder) holder.innerHTML = bellCurveSVG(dst.years, BELLCURVE_W, BELLCURVE_H, CATEGORY_DEFAULTS[dst.category].colorVar);
+    dstListEl.querySelectorAll(`.yield-schedule[data-id="${id}"] [data-year-row]`).forEach(tr => {
+      tr.classList.toggle("past-hold", Number(tr.dataset.yearRow) >= dst.years);
+    });
   }
   // Below-minimum warning has to be patched live too (typing shouldn't
   // require a full card rebuild, which would drop focus mid-keystroke --
@@ -2372,6 +2529,13 @@ function onDstFieldEvent(e, normalize) {
   scheduleUrlSync();
 }
 dstListEl.addEventListener("input", (e) => onDstFieldEvent(e, false));
+// Remember whether each card's schedule is open, so a re-render (adding or
+// collapsing another card) doesn't snap it shut. 'toggle' doesn't bubble,
+// hence capture.
+dstListEl.addEventListener("toggle", (e) => {
+  const dst = state.dsts.find(d => d.id === Number(e.target.dataset.id));
+  if (dst && e.target.classList.contains("yield-schedule")) dst.scheduleOpen = e.target.open;
+}, true);
 dstListEl.addEventListener("change", (e) => onDstFieldEvent(e, true));
 
 // Stepper buttons live both inside #dstList (per-DST fields) and outside it
