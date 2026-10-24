@@ -46,8 +46,8 @@
       the listener, the clamping and the shareable-URL key all derive from it.
   TO ADD AN ICON: drop its path data into ICON_PATHS, reference the key.
 
-  NOTE ON THE DEFAULT RETURN FIGURES: the per-category cash-on-cash, leverage
-  and appreciation numbers in CATEGORY_DEFAULTS are ILLUSTRATIVE PLACEHOLDERS,
+  NOTE ON THE DEFAULT RETURN FIGURES: the per-category cash-on-cash, loan-to-value,
+  appreciation and (zero coupon) loan-term numbers in CATEGORY_DEFAULTS are ILLUSTRATIVE PLACEHOLDERS,
   not researched market data. See the comment above that array before quoting
   them anywhere.
 ==================================================================================
@@ -135,6 +135,7 @@
      here would misleadingly suggest a link between the two. */
   --chart-cashflow:     var(--accent);
   --chart-appreciation: #c9720f;
+  --chart-paydown:      var(--cat-zerocoupon);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -621,6 +622,9 @@ table.breakdown th {
   letter-spacing: 0.03em;
 }
 table.breakdown td.cat-cell { display: flex; align-items: center; gap: 6px; }
+/* Debt paydown column: only meaningful with a zero coupon DST in the
+   portfolio, so renderResults hides it otherwise (see hasPaydown there). */
+table.breakdown.no-paydown .paydown-col { display: none; }
 .table-scroll { overflow-x: auto; }
 tr.total-row td { font-weight: 700; border-top: 2px solid var(--axis); border-bottom: none; }
 
@@ -810,10 +814,11 @@ footer.disclaimer .pmr-link { display: inline-block; margin-top: 4px; font-weigh
             <th>DST</th>
             <th>Allocated</th>
             <th>Fees</th>
-            <th>Leverage</th>
+            <th>LTV</th>
             <th>Hold (yrs)</th>
             <th>Cash flow</th>
             <th>Appreciation gain</th>
+            <th class="paydown-col">Debt paydown</th>
             <th>Total profit</th>
             <th>Annualized return</th>
           </tr>
@@ -963,7 +968,9 @@ const ICON_PATHS = {
                      MUST NOT change once shipped -- changing one silently
                      breaks every link anyone has already shared.
      cashOnCash      starting annual distribution rate, %  (illustrative)
-     leverage        starting debt-on-equity, %            (illustrative)
+     leverage        starting loan-to-value (debt / property value), %
+                     (illustrative). LTV, not debt-on-equity, because LTV is
+                     how every offering document quotes it.
      appreciation    starting annual appreciation, %       (illustrative)
      colorVar        the --cat-* CSS variable for this category
      icon            key into ICON_PATHS
@@ -974,6 +981,13 @@ const ICON_PATHS = {
                      categories that genuinely differ state their own, so the
                      exception reads as deliberate rather than as noise.
      lockCashOnCash  true disables the cash-on-cash field entirely
+     loanRate        PRESENT ONLY for categories whose debt amortizes: starting
+                     loan interest rate, %/yr (illustrative). Its presence is
+                     what switches the card to an amortizing loan and adds the
+                     rate + amortization-term fields; omit it for the usual
+                     interest-only DST debt.
+     amortYears      starting amortization term, years (illustrative). Required
+                     whenever loanRate is given.
 
    !!  THE cashOnCash / leverage / appreciation FIGURES BELOW ARE ILLUSTRATIVE
    !!  PLACEHOLDERS, chosen to be plausible in magnitude. They are NOT
@@ -983,23 +997,30 @@ const ICON_PATHS = {
    !!  implies a measurement that was never taken. If you ever replace these
    !!  with sourced numbers, cite the source per category here AND update the
    !!  "About these starting figures" note in the DST allocations panel.
+   !!  The leverage figures were converted one-for-one from the old
+   !!  debt-on-equity defaults (e.g. 45% D/E -> 31% LTV) so the starting
+   !!  results didn't jump when the input switched to LTV. They read low
+   !!  next to typical offerings; raising them is a deliberate choice.
    ============================================================================ */
 const CATEGORY_DEFAULTS = {
-  multifamily:    { label: "Multifamily",     code: "mf", cashOnCash: 5.0, leverage: 45, appreciation: 3.0, colorVar: "--cat-multifamily",    icon: "home",          light: false },
-  industrial:     { label: "Industrial",      code: "in", cashOnCash: 6.0, leverage: 40, appreciation: 3.5, colorVar: "--cat-industrial",     icon: "factory",       light: true  },
-  office:         { label: "Office",          code: "of", cashOnCash: 6.5, leverage: 35, appreciation: 2.0, colorVar: "--cat-office",         icon: "building",      light: false },
-  selfstorage:    { label: "Self-Storage",    code: "ss", cashOnCash: 5.5, leverage: 30, appreciation: 3.0, colorVar: "--cat-selfstorage",    icon: "warehouse",     light: true  },
-  seniorliving:   { label: "Senior Living",   code: "sl", cashOnCash: 6.3, leverage: 40, appreciation: 2.5, colorVar: "--cat-seniorliving",   icon: "armchair",      light: true  },
-  studenthousing: { label: "Student Housing", code: "sh", cashOnCash: 6.0, leverage: 45, appreciation: 3.0, colorVar: "--cat-studenthousing", icon: "graduationCap", light: false },
-  medicaloffice:  { label: "Medical Office",  code: "mo", cashOnCash: 5.8, leverage: 35, appreciation: 2.3, colorVar: "--cat-medicaloffice",  icon: "stethoscope",   light: false },
-  retail:         { label: "Retail",          code: "rt", cashOnCash: 6.0, leverage: 40, appreciation: 2.5, colorVar: "--cat-retail",         icon: "store",         light: false },
+  multifamily:    { label: "Multifamily",     code: "mf", cashOnCash: 5.0, leverage: 31, appreciation: 3.0, colorVar: "--cat-multifamily",    icon: "home",          light: false },
+  industrial:     { label: "Industrial",      code: "in", cashOnCash: 6.0, leverage: 29, appreciation: 3.5, colorVar: "--cat-industrial",     icon: "factory",       light: true  },
+  office:         { label: "Office",          code: "of", cashOnCash: 6.5, leverage: 26, appreciation: 2.0, colorVar: "--cat-office",         icon: "building",      light: false },
+  selfstorage:    { label: "Self-Storage",    code: "ss", cashOnCash: 5.5, leverage: 23, appreciation: 3.0, colorVar: "--cat-selfstorage",    icon: "warehouse",     light: true  },
+  seniorliving:   { label: "Senior Living",   code: "sl", cashOnCash: 6.3, leverage: 29, appreciation: 2.5, colorVar: "--cat-seniorliving",   icon: "armchair",      light: true  },
+  studenthousing: { label: "Student Housing", code: "sh", cashOnCash: 6.0, leverage: 31, appreciation: 3.0, colorVar: "--cat-studenthousing", icon: "graduationCap", light: false },
+  medicaloffice:  { label: "Medical Office",  code: "mo", cashOnCash: 5.8, leverage: 26, appreciation: 2.3, colorVar: "--cat-medicaloffice",  icon: "stethoscope",   light: false },
+  retail:         { label: "Retail",          code: "rt", cashOnCash: 6.0, leverage: 29, appreciation: 2.5, colorVar: "--cat-retail",         icon: "store",         light: false },
   // Zero coupon: no regular distributions -- all net operating income
   // services the (large) debt instead, so cash-on-cash is fixed at 0%, not
   // just defaulted there (lockCashOnCash disables the field entirely; see
   // renderCardList). Structurally much higher leverage than a typical DST,
   // often used to replace a large amount of relinquished-property debt in
   // an exchange -- hence the only per-category leverage band in this array.
-  zerocoupon:     { label: "Zero Coupon DST", code: "zc", cashOnCash: 0.0, leverage: 75, appreciation: 3.0, colorVar: "--cat-zerocoupon",     icon: "landmark",      light: false, leverageMin: 60, leverageMax: 90, lockCashOnCash: true },
+  // And because the rent goes to debt service, the loan AMORTIZES: the
+  // investor's return is mostly principal paydown (returned as equity at
+  // sale), which is why this is the only entry with loanRate/amortYears.
+  zerocoupon:     { label: "Zero Coupon DST", code: "zc", cashOnCash: 0.0, leverage: 75, appreciation: 3.0, colorVar: "--cat-zerocoupon",     icon: "landmark",      light: false, leverageMin: 60, leverageMax: 90, lockCashOnCash: true, loanRate: 6.0, amortYears: 20 },
 };
 
 // Illustrative shape of DST holding periods: 6-7 years is the fat middle of
@@ -1014,9 +1035,17 @@ const MIN_HOLD = 4;
 const MAX_HOLD = 10;
 const DEFAULT_HOLD_YEARS = 6.5; // the deterministic "expected" point estimate
 
-// Shared leverage band, used by every category that doesn't state its own.
+// Shared loan-to-value band, %, used by every category that doesn't state its
+// own. Must stay below 100: LTV 100% means zero equity, and the model divides
+// by (100 - LTV).
 const LEVERAGE_MIN_DEFAULT = 0;
 const LEVERAGE_MAX_DEFAULT = 70;
+
+// Input bounds for the amortizing-loan fields (zero coupon cards only).
+const LOAN_RATE_MIN = 0;    // %/yr
+const LOAN_RATE_MAX = 15;   // %/yr
+const AMORT_YEARS_MIN = 5;  // years -- below this the payment swamps any plausible rent
+const AMORT_YEARS_MAX = 40; // years
 
 // Ceiling on every dollar-denominated input. Not a modeling limit -- just a
 // sanity bound so a mistyped figure can't run the projection into scientific
@@ -1202,17 +1231,24 @@ const trimNum = n => Number(Number(n).toFixed(4));
    to unit-test or reuse (e.g. from the Monte Carlo simulator) without
    touching the DOM.
 
-   Leverage model: "leverage %" is the debt added on top of the equity, i.e.
-   a $1M equity stake with 50% leverage controls a $1.5M property
-   (leveragedValue = equity * (1 + leverage%)). Cash-on-cash return is paid
-   on the *equity* actually invested (distributions aren't a function of
-   how much debt sits under the deal). Appreciation, however, is earned on
-   the full leveraged value -- that's the benefit (and the risk) of leverage.
-   Assuming interest-only debt (typical for DSTs) that stays flat until
-   sale, the algebra collapses nicely to:
+   Leverage model: "leverage %" is LOAN-TO-VALUE -- debt as a share of the
+   property's value, the way offering documents quote it. So a $1M equity
+   stake at 50% LTV controls a $2M property carrying $1M of debt:
+       leveragedValue = equity / (1 - LTV%)      debt = leveragedValue - equity
+   (Before this was LTV it was debt-on-equity, where 50% meant a $1.5M
+   property. Old shared links are converted on load -- see decodeDsts.)
+   Cash-on-cash return is paid on the *equity* actually invested
+   (distributions aren't a function of how much debt sits under the deal).
+   Appreciation, however, is earned on the full leveraged value -- that's
+   the benefit (and the risk) of leverage. The investor's cash at sale is
+   sale price minus remaining loan balance, which splits cleanly into:
+       equity + appreciationGain + debtPaydown
        appreciationGain = leveragedValue * ((1 + appreciation%)^years - 1)
-   i.e. the investor's dollar gain from appreciation scales with the
-   leveraged value, regardless of the debt payoff at sale (it cancels out).
+       debtPaydown      = debt - remainingBalance
+   For interest-only debt (typical for DSTs) the balance never moves, so
+   debtPaydown is 0. For an amortizing loan (zero coupon: the rent goes to
+   the lender instead of the investor) it's the principal repaid by exit,
+   from a standard level monthly payment -- see remainingLoanBalance.
 
    Fee model: `grossAmount` is what the investor actually commits from their
    1031 proceeds. When not fiduciary, a combined upfront + placement fee
@@ -1228,8 +1264,8 @@ function computeDst(dst, fiduciary, totalFeePct) {
   const feesPaid = grossAmount * feeRate;
   const equity = grossAmount - feesPaid; // net capital actually put to work
 
-  const leverageMultiplier = 1 + dst.leverage / 100;
-  const leveragedValue = equity * leverageMultiplier;
+  const leveragedValue = equity / (1 - dst.leverage / 100);
+  const debt = leveragedValue - equity;
 
   // Cash flow distributions: a simple (non-compounding) yield on the net
   // equity. DST cash-on-cash is already an annual rate, so annualCashFlow
@@ -1251,11 +1287,33 @@ function computeDst(dst, fiduciary, totalFeePct) {
   const growthFactor = Math.pow(1 + dst.appreciation / 100, dst.years);
   const appreciationGain = leveragedValue * (growthFactor - 1);
 
-  const finalValue = equity + cashFlowIncome + appreciationGain; // cash the investor actually receives back
+  // Principal repaid by exit. Zero for interest-only debt (no loanRate on the
+  // DST). On a zero coupon DST this is typically reported as taxable income
+  // each year with no distribution to pay the tax ("phantom income") -- the
+  // card says so; the model itself doesn't tax it.
+  const amortizing = dst.loanRate !== undefined;
+  const debtPaydown = amortizing
+    ? debt - remainingLoanBalance(debt, dst.loanRate, dst.amortYears, dst.years)
+    : 0;
+
+  const finalValue = equity + cashFlowIncome + appreciationGain + debtPaydown; // cash the investor actually receives back
   const totalProfit = finalValue - grossAmount; // profit relative to what was originally committed (fee included as a drag)
   const annualizedReturn = dst.years > 0 && grossAmount > 0 ? Math.pow(finalValue / grossAmount, 1 / dst.years) - 1 : 0;
 
-  return { grossAmount, feesPaid, equity, leveragedValue, annualCashFlow, monthlyCashFlow, cashFlowIncome, appreciationGain, totalProfit, finalValue, annualizedReturn };
+  return { grossAmount, feesPaid, equity, leveragedValue, debt, annualCashFlow, monthlyCashFlow, cashFlowIncome, appreciationGain, debtPaydown, totalProfit, finalValue, annualizedReturn };
+}
+
+// Balance left on a level-payment, monthly-amortizing loan after `years`.
+// Standard closed form: B = P * ((1+i)^n - (1+i)^k) / ((1+i)^n - 1), with
+// i the monthly rate, n the total payments, k the payments made. Falls back
+// to straight-line when the rate is 0 (the formula is 0/0 there). Fractional
+// years (the 6.5-yr default, Monte Carlo jitter) just mean fractional k.
+function remainingLoanBalance(principal, ratePct, amortYears, years) {
+  const n = amortYears * 12;
+  const k = Math.min(years * 12, n);
+  const i = ratePct / 100 / 12;
+  if (i === 0) return principal * (1 - k / n);
+  return principal * (Math.pow(1 + i, n) - Math.pow(1 + i, k)) / (Math.pow(1 + i, n) - 1);
 }
 
 // Blends the whole portfolio. Uses a dollar-weighted average holding period
@@ -1266,7 +1324,7 @@ function computeDst(dst, fiduciary, totalFeePct) {
 // instead.
 function computePortfolio(dsts, fiduciary, totalFeePct) {
   if (dsts.length === 0) {
-    return { totalGross: 0, totalFees: 0, totalEquity: 0, totalAnnualCashFlow: 0, totalMonthlyCashFlow: 0, totalCashFlow: 0, totalAppreciation: 0, totalProfit: 0, totalFinalValue: 0, blendedAnnualizedReturn: 0, weightedYears: 0, rows: [] };
+    return { totalGross: 0, totalFees: 0, totalEquity: 0, totalAnnualCashFlow: 0, totalMonthlyCashFlow: 0, totalCashFlow: 0, totalAppreciation: 0, totalDebtPaydown: 0, totalProfit: 0, totalFinalValue: 0, blendedAnnualizedReturn: 0, weightedYears: 0, rows: [] };
   }
   const rows = dsts.map(d => ({ dst: d, ...computeDst(d, fiduciary, totalFeePct) }));
   const totalGross = rows.reduce((s, r) => s + r.grossAmount, 0);
@@ -1279,6 +1337,7 @@ function computePortfolio(dsts, fiduciary, totalFeePct) {
   const totalMonthlyCashFlow = rows.reduce((s, r) => s + r.monthlyCashFlow, 0);
   const totalCashFlow = rows.reduce((s, r) => s + r.cashFlowIncome, 0);
   const totalAppreciation = rows.reduce((s, r) => s + r.appreciationGain, 0);
+  const totalDebtPaydown = rows.reduce((s, r) => s + r.debtPaydown, 0);
   const totalFinalValue = rows.reduce((s, r) => s + r.finalValue, 0);
   const totalProfit = totalFinalValue - totalGross;
   const weightedYears = totalGross > 0
@@ -1287,7 +1346,7 @@ function computePortfolio(dsts, fiduciary, totalFeePct) {
   const equityMultiple = totalGross > 0 ? totalFinalValue / totalGross : 0;
   const blendedAnnualizedReturn = weightedYears > 0 ? Math.pow(equityMultiple, 1 / weightedYears) - 1 : 0;
 
-  return { totalGross, totalFees, totalEquity, totalAnnualCashFlow, totalMonthlyCashFlow, totalCashFlow, totalAppreciation, totalProfit, totalFinalValue, blendedAnnualizedReturn, weightedYears, rows };
+  return { totalGross, totalFees, totalEquity, totalAnnualCashFlow, totalMonthlyCashFlow, totalCashFlow, totalAppreciation, totalDebtPaydown, totalProfit, totalFinalValue, blendedAnnualizedReturn, weightedYears, rows };
 }
 
 /* ----------------------------------------------------------------------------
@@ -1336,7 +1395,7 @@ function taxOpts() {
 // relinquished property (`relinquishedDebt`, a default field alongside
 // Total 1031 proceeds) -- any shortfall is "debt-relief boot," taxable even
 // with zero cash received. replacementDebt is derived from the
-// already-computed portfolio rows (each DST's net equity * leverage). This
+// already-computed portfolio rows (each DST's starting debt, from its LTV). This
 // always applies, regardless of the Advanced toggle.
 //
 // The flat-rate (advancedTax off) path is a simplified model that assumes the
@@ -1349,7 +1408,7 @@ function computeBoot(totalProceeds, dsts, portfolioRows, opts) {
   const allocated = dsts.reduce((s, d) => s + d.amount, 0);
   const cashBoot = Math.max(totalProceeds - allocated, 0);
 
-  const replacementDebt = portfolioRows.reduce((s, r) => s + r.equity * (r.dst.leverage / 100), 0);
+  const replacementDebt = portfolioRows.reduce((s, r) => s + r.debt, 0);
   const debtReliefBoot = Math.max(opts.relinquishedDebt - replacementDebt, 0);
   const totalBoot = cashBoot + debtReliefBoot;
 
@@ -1386,8 +1445,15 @@ function makeDst(categoryKey) {
     leverage: def.leverage,
     appreciation: def.appreciation,
     years: DEFAULT_HOLD_YEARS,
+    ...loanFieldsFor(def),
     collapsed: false,
   };
+}
+
+// The amortizing-loan fields, only for categories that have them (their
+// absence is what makes computeDst treat the debt as interest-only).
+function loanFieldsFor(def, loanRate = def.loanRate, amortYears = def.amortYears) {
+  return def.loanRate === undefined ? {} : { loanRate, amortYears };
 }
 
 /* ----------------------------------------------------------------------------
@@ -1612,6 +1678,7 @@ function donutSVG(segments, size = 116, strokeWidth = 22) {
 const dstListEl = document.getElementById("dstList");
 const statGridEl = document.getElementById("statGrid");
 const breakdownBodyEl = document.getElementById("breakdownBody");
+const breakdownTableEl = breakdownBodyEl.closest("table");
 const allocBannerEl = document.getElementById("allocBanner");
 const allocAmountEl = document.getElementById("allocAmount");
 const allocRemainingEl = document.getElementById("allocRemaining");
@@ -1665,7 +1732,7 @@ function renderAllocationBanner() {
 // card is collapsed -- lets a 3+ DST portfolio (the tool's "complex demo"
 // use case) fit on screen without losing at-a-glance numbers.
 function dstSummaryHTML(dst) {
-  return `${fmtUSD.format(dst.amount)} &middot; ${esc(trimNum(dst.cashOnCash))}% CoC &middot; ${esc(trimNum(dst.leverage))}% leverage &middot; ${esc(trimNum(dst.years))}yr hold`;
+  return `${fmtUSD.format(dst.amount)} &middot; ${esc(trimNum(dst.cashOnCash))}% CoC &middot; ${esc(trimNum(dst.leverage))}% LTV &middot; ${esc(trimNum(dst.years))}yr hold`;
 }
 
 function renderCardList() {
@@ -1702,9 +1769,22 @@ function renderCardList() {
           note: def.lockCashOnCash ? "Fixed at 0% -- zero coupon DSTs pay no regular distributions." : "",
         })}
         <div class="field">
-          <label class="field-label" for="lev-${dst.id}">Leverage: <span data-readout="leverage" data-id="${dst.id}">${esc(trimNum(dst.leverage))}%</span></label>
+          <label class="field-label" for="lev-${dst.id}">Loan-to-value (LTV): <span data-readout="leverage" data-id="${dst.id}">${esc(trimNum(dst.leverage))}%</span></label>
           <input type="range" id="lev-${dst.id}" min="${levMin(def)}" max="${levMax(def)}" step="1" data-field="leverage" data-id="${dst.id}" value="${dst.leverage}">
+          <p class="field-note">Debt as a share of the property's value, as offering documents quote it.</p>
         </div>
+        ${def.loanRate === undefined ? "" : `
+        ${numberFieldHTML({
+          id: `rate-${dst.id}`, label: "Loan interest rate", value: dst.loanRate,
+          min: LOAN_RATE_MIN, max: LOAN_RATE_MAX, step: 0.1, suffix: "%/yr",
+          extraAttrs: `data-field="loanRate" data-id="${dst.id}"`,
+        })}
+        ${numberFieldHTML({
+          id: `amort-${dst.id}`, label: "Amortization term", value: dst.amortYears,
+          min: AMORT_YEARS_MIN, max: AMORT_YEARS_MAX, step: 1, suffix: "yrs",
+          extraAttrs: `data-field="amortYears" data-id="${dst.id}"`,
+          note: "The rent pays this loan down instead of paying you. You get that paydown back as equity when the property sells, but it is usually taxable each year with no cash distribution to cover the tax (\"phantom income\").",
+        })}`}
         ${numberFieldHTML({
           id: `appr-${dst.id}`, label: "Appreciation rate", value: dst.appreciation,
           min: -10, max: 20, step: 0.1, suffix: "%/yr",
@@ -1737,12 +1817,19 @@ function renderResults() {
   const totalFeePct = state.upfrontFeeRate + state.placementFeeRate;
   const portfolio = computePortfolio(state.dsts, state.fiduciary, totalFeePct);
 
+  // Debt paydown only exists for amortizing (zero coupon) DSTs, so its tile and
+  // table column are shown only when one is in the portfolio -- otherwise it
+  // would be a permanent $0 taking width from the columns that matter.
+  const hasPaydown = state.dsts.some(d => d.loanRate !== undefined);
+  breakdownTableEl.classList.toggle("no-paydown", !hasPaydown);
+
   // Stat tiles
   const tiles = [
     { label: "Net equity invested", value: fmtUSD.format(portfolio.totalEquity) },
     { label: "Upfront/Placement Fees", value: fmtUSD.format(portfolio.totalFees) },
     { label: "Cash flow income", value: `${fmtUSD.format(portfolio.totalAnnualCashFlow)}/yr`, sub: `${fmtUSD.format(portfolio.totalMonthlyCashFlow)}/mo` },
     { label: "Appreciation gain", value: fmtUSD.format(portfolio.totalAppreciation) },
+    ...(hasPaydown ? [{ label: "Debt paydown", value: fmtUSD.format(portfolio.totalDebtPaydown) }] : []),
     { label: "Total profit", value: fmtUSD.format(portfolio.totalProfit), good: true },
     { label: "Projected sale value", value: fmtUSD.format(portfolio.totalFinalValue) },
     { label: "Blended annualized return", value: fmtPct(portfolio.blendedAnnualizedReturn), good: true },
@@ -1759,7 +1846,7 @@ function renderResults() {
   // typical recording-width viewport.
   const cfCell = (annual, monthly) => `<td class="cf-cell">${fmtUSD.format(annual)}<span class="cf-mo">${fmtUSD.format(monthly)}/mo</span></td>`;
   if (portfolio.rows.length === 0) {
-    breakdownBodyEl.innerHTML = `<tr><td colspan="9" style="text-align:center; color:var(--text-muted); padding:16px;">Add a DST to see the breakdown.</td></tr>`;
+    breakdownBodyEl.innerHTML = `<tr><td colspan="10" style="text-align:center; color:var(--text-muted); padding:16px;">Add a DST to see the breakdown.</td></tr>`;
   } else {
     breakdownBodyEl.innerHTML = portfolio.rows.map(r => {
       const def = CATEGORY_DEFAULTS[r.dst.category];
@@ -1772,6 +1859,7 @@ function renderResults() {
         <td>${esc(trimNum(r.dst.years))}</td>
         ${cfCell(r.annualCashFlow, r.monthlyCashFlow)}
         <td>${fmtUSD.format(r.appreciationGain)}</td>
+        <td class="paydown-col">${fmtUSD.format(r.debtPaydown)}</td>
         <td>${fmtUSD.format(r.totalProfit)}</td>
         <td>${fmtPct(r.annualizedReturn)}</td>
       </tr>`;
@@ -1784,6 +1872,7 @@ function renderResults() {
         <td>${portfolio.weightedYears.toFixed(1)}</td>
         ${cfCell(portfolio.totalAnnualCashFlow, portfolio.totalMonthlyCashFlow)}
         <td>${fmtUSD.format(portfolio.totalAppreciation)}</td>
+        <td class="paydown-col">${fmtUSD.format(portfolio.totalDebtPaydown)}</td>
         <td>${fmtUSD.format(portfolio.totalProfit)}</td>
         <td>${fmtPct(portfolio.blendedAnnualizedReturn)}</td>
       </tr>`;
@@ -1844,7 +1933,8 @@ function renderBootBanner(portfolio) {
 function renderGainMix(portfolio) {
   const cashFlow = portfolio.totalCashFlow;
   const appreciation = portfolio.totalAppreciation;
-  const sum = cashFlow + appreciation;
+  const paydown = portfolio.totalDebtPaydown;
+  const sum = cashFlow + appreciation + paydown;
 
   if (sum <= 0) {
     gainMixWrapEl.innerHTML = `<p class="gain-empty">Add a DST to see the mix of cash flow vs. appreciation.</p>`;
@@ -1854,6 +1944,9 @@ function renderGainMix(portfolio) {
   const segments = [
     { label: "Cash flow income", value: cashFlow, colorVar: "--chart-cashflow" },
     { label: "Appreciation gain", value: appreciation, colorVar: "--chart-appreciation" },
+    // Only a zero coupon DST pays its loan down; a $0 slice would just add a
+    // legend row reading "0%".
+    ...(paydown > 0 ? [{ label: "Debt paydown", value: paydown, colorVar: "--chart-paydown" }] : []),
   ];
 
   const legendRows = segments.map(seg => `
@@ -1867,9 +1960,10 @@ function renderGainMix(portfolio) {
   // (Fiduciary on). A non-fiduciary fee is subtracted from that same sum to
   // arrive at Total Profit, so the two figures part ways by exactly the fee.
   const fees = portfolio.totalFees;
+  const parts = paydown > 0 ? "Cash flow + appreciation + debt paydown" : "Cash flow + appreciation";
   const caption = fees > FEE_EPSILON_USD
-    ? `Cash flow + appreciation = ${fmtUSD.format(sum)} — Total Profit is ${fmtUSD.format(portfolio.totalProfit)} after subtracting ${fmtUSD.format(fees)} in upfront/placement fees (switch to Fiduciary to remove that gap).`
-    : `Cash flow + appreciation = ${fmtUSD.format(sum)}, which equals Total Profit while Fiduciary is on (no fees to subtract).`;
+    ? `${parts} = ${fmtUSD.format(sum)} — Total Profit is ${fmtUSD.format(portfolio.totalProfit)} after subtracting ${fmtUSD.format(fees)} in upfront/placement fees (switch to Fiduciary to remove that gap).`
+    : `${parts} = ${fmtUSD.format(sum)}, which equals Total Profit while Fiduciary is on (no fees to subtract).`;
 
   gainMixWrapEl.innerHTML = `
     <div class="gain-mix">
@@ -1960,10 +2054,17 @@ const FIELD_HOOKS = { updateFiduciaryHint };
    SHAREABLE URL STATE
    Everything a viewer needs to see the same scenario is packed into the URL
    hash as short key=value pairs, so a copied link reproduces the exact setup.
-   Scalar keys come from SCALAR_FIELDS (urlKey); the DST list is one `d` key
+   Scalar keys come from SCALAR_FIELDS (urlKey); the DST list is one `l` key
    holding comma-separated records separated by semicolons:
-       d=mf,800000,5,45,3,6.5;in,1200000,6,40,3.5,6.5
-         ^category code
+       l=mf,800000,5,45,3,6.5;zc,1200000,0,75,3,6.5,6,20
+         ^category code        ^LTV          ^loan rate, amortization term
+                                              (amortizing categories only)
+   LEGACY: links made before leverage became loan-to-value carry the list
+   under `d` instead, with leverage as debt-on-equity. Those are still read,
+   and converted (LTV = DE / (1 + DE)) so an old link shows the same
+   property it always did -- the one exception being a zero coupon record,
+   whose old 60-90% debt-on-equity band (37-47% LTV) sits below today's
+   60-90% LTV band and gets clamped up to it. Never reuse `d` for new links.
    Written with replaceState so dragging a slider doesn't fill the back button
    with history entries (and so it never fires our own hashchange listener).
    ---------------------------------------------------------------------------- */
@@ -1982,10 +2083,11 @@ function encodeState() {
   parts.push(`adv=${state.advancedTax ? 1 : 0}`);
   if (mcToggleEl.checked) parts.push("mc=1");
   if (state.dsts.length) {
-    parts.push("d=" + state.dsts.map(d => [
+    parts.push("l=" + state.dsts.map(d => [
       CATEGORY_DEFAULTS[d.category].code,
       trimNum(d.amount), trimNum(d.cashOnCash), trimNum(d.leverage),
       trimNum(d.appreciation), trimNum(d.years),
+      ...(d.loanRate === undefined ? [] : [trimNum(d.loanRate), trimNum(d.amortYears)]),
     ].join(",")).join(";"));
   }
   return parts.join("&");
@@ -1994,7 +2096,7 @@ function encodeState() {
 // Every value is re-clamped on the way in, and the zero-coupon cash-on-cash
 // lock is re-applied here rather than trusted -- a hand-edited link must not
 // be able to smuggle in a state the UI itself would refuse to produce.
-function decodeDsts(raw) {
+function decodeDsts(raw, legacyDebtOnEquity = false) {
   const out = [];
   for (const rec of String(raw).split(";")) {
     const p = rec.split(",");
@@ -2006,14 +2108,22 @@ function decodeDsts(raw) {
       const n = Number(v);
       return Number.isFinite(n) ? clamp(n, lo, hi) : fallback;
     };
+    // Legacy `d` links stored debt-on-equity; convert before clamping.
+    const de = Number(p[3]);
+    const rawLeverage = legacyDebtOnEquity && Number.isFinite(de) && de > -100
+      ? 100 * de / (100 + de)
+      : p[3];
     out.push({
       id: nextId++,
       category: catKey,
       amount: num(p[1], 0, MAX_DOLLAR_FIELD, 0),
       cashOnCash: def.lockCashOnCash ? 0 : num(p[2], 0, 30, def.cashOnCash),
-      leverage: num(p[3], levMin(def), levMax(def), def.leverage),
+      leverage: Math.round(num(rawLeverage, levMin(def), levMax(def), def.leverage) * 10) / 10,
       appreciation: num(p[4], -10, 20, def.appreciation),
       years: num(p[5], MIN_HOLD, MAX_HOLD, DEFAULT_HOLD_YEARS),
+      ...loanFieldsFor(def,
+        num(p[6], LOAN_RATE_MIN, LOAN_RATE_MAX, def.loanRate),
+        num(p[7], AMORT_YEARS_MIN, AMORT_YEARS_MAX, def.amortYears)),
       collapsed: false,
     });
   }
@@ -2037,8 +2147,8 @@ function applyHashState(rawHash) {
   }
   if (params.has("fid")) { state.fiduciary = params.get("fid") === "1"; touched = true; }
   if (params.has("adv")) { state.advancedTax = params.get("adv") === "1"; touched = true; }
-  if (params.has("d")) {
-    const parsed = decodeDsts(params.get("d"));
+  if (params.has("l") || params.has("d")) {
+    const parsed = params.has("l") ? decodeDsts(params.get("l")) : decodeDsts(params.get("d"), true);
     if (parsed) { state.dsts = parsed; touched = true; }
   }
   if (params.has("mc")) {
