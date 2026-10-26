@@ -411,9 +411,13 @@ button:focus-visible,
 }
 .yield-table { border-collapse: collapse; margin-top: 8px; font-size: 0.84rem; }
 .yield-table th { text-align: left; font-weight: 600; color: var(--text-muted); padding: 4px 8px 4px 0; }
-.yield-table td { padding: 3px 8px 3px 0; }
+.yield-table td { padding: 3px 6px 3px 0; }
+.yield-table td:first-child { white-space: nowrap; }
+/* Inputs start phone-narrow so the four columns (incl. the after-tax yield
+   readout) fit a ~250px-wide card on a 375px phone without clipping; the
+   desktop width comes back in the media query below. */
 .yield-table input[type="number"] {
-  width: 84px;
+  width: 58px;
   padding: 5px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -421,6 +425,13 @@ button:focus-visible,
   font: inherit;
 }
 .yield-table tr.past-hold td { opacity: 0.5; }
+@media (min-width: 600px) {
+  .yield-table td { padding-right: 8px; }
+  .yield-table input[type="number"] { width: 84px; }
+}
+/* Computed (read-only) after-tax yield column -- plain text, not an input, so
+   it reads as an output of the two editable columns beside it. */
+.yield-table td.after-tax-yield { font-variant-numeric: tabular-nums; color: var(--text-secondary); white-space: nowrap; }
 .dist-tax-row { margin-bottom: 14px; max-width: 260px; }
 
 /* ---- Below-minimum DST allocation warning ---------------------------------- */
@@ -828,8 +839,9 @@ footer.disclaimer .pmr-link { display: inline-block; margin-top: 4px; font-weigh
     <p class="hint">Based on each DST's year-by-year yield, loan-to-value, appreciation rate, and assumed holding period.</p>
 
     <!-- Rate applied to the part of each year's distributions that ISN'T
-         tax-sheltered (see each card's year-by-year schedule). Only feeds the
-         "After-tax cash flow" tile; every other figure here is pre-tax. -->
+         tax-sheltered (see each card's year-by-year schedule). Feeds the
+         "After-tax cash flow" tile and each card's after-tax yield column;
+         every other figure here is pre-tax. -->
     <div class="dist-tax-row">
       <div id="ordIncomeFieldWrap" class="field-mount"></div>
     </div>
@@ -1809,6 +1821,28 @@ function dstSummaryHTML(dst) {
   return `${fmtUSD.format(dst.amount)} &middot; ${esc(trimNum(dst.cashOnCash))}% CoC &middot; ${esc(trimNum(dst.leverage))}% LTV &middot; ${esc(trimNum(dst.years))}yr hold`;
 }
 
+// After-tax yield for one year of the schedule: only the unsheltered part of
+// the distribution is taxed, at the "Tax rate on distributions" field. Pure
+// arithmetic on the year's two inputs -- deliberately ignores the basis
+// reduction that sheltering causes (that tax lands at sale, not this year).
+function afterTaxYield(yieldPct, shelteredPct) {
+  return yieldPct * (1 - (1 - shelteredPct / 100) * (state.ordinaryRate / 100));
+}
+const fmtYieldPct = x => x.toFixed(2) + "%";
+
+// Re-fills the after-tax yield column of every open-or-closed schedule in
+// place. Called from renderResults(), which runs after every input change --
+// including the tax-rate field, which lives outside the cards -- so the
+// column can't go stale, and the cards aren't rebuilt (that would drop focus).
+function refreshAfterTaxYields() {
+  state.dsts.forEach(dst => {
+    dstListEl.querySelectorAll(`.yield-schedule[data-id="${dst.id}"] [data-after-tax-year]`).forEach(td => {
+      const t = Number(td.dataset.afterTaxYear);
+      td.textContent = fmtYieldPct(afterTaxYield(dst.yields[t], dst.sheltered[t]));
+    });
+  });
+}
+
 // The ten-row yield / tax-sheltered table. Rows past the holding period are
 // dimmed rather than hidden: they still matter to the Monte Carlo, which can
 // draw a longer hold, and hiding them would make the table jump as the
@@ -1821,15 +1855,16 @@ function yieldScheduleHTML(dst) {
           data-field="yields" data-year="${t}" data-id="${dst.id}"></td>
         <td><input type="number" min="0" max="100" step="1" value="${dst.sheltered[t]}" aria-label="Year ${t + 1} tax-sheltered share, percent"
           data-field="sheltered" data-year="${t}" data-id="${dst.id}"></td>
+        <td class="after-tax-yield" data-after-tax-year="${t}">${fmtYieldPct(afterTaxYield(y, dst.sheltered[t]))}</td>
       </tr>`).join("");
   return `
         <details class="yield-schedule" data-id="${dst.id}"${dst.scheduleOpen ? " open" : ""}>
           <summary>Year-by-year yield &amp; tax shelter</summary>
           <table class="yield-table">
-            <thead><tr><th>Year</th><th>Yield, %/yr</th><th>Tax-sheltered, %</th></tr></thead>
+            <thead><tr><th>Year</th><th>Yield, %/yr</th><th>Tax-sheltered, %</th><th>After-tax yield</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
-          <p class="field-note">Yield is the distribution as a % of net equity. Tax-sheltered is the share of that year's distribution not taxed currently (typically offset by depreciation). Sheltered income usually lowers your basis, so more of it is taxed when the property sells.</p>
+          <p class="field-note">Yield is the distribution as a % of net equity. Tax-sheltered is the share of that year's distribution not taxed currently (typically offset by depreciation). After-tax yield = yield &times; (1 &minus; unsheltered share &times; the "Tax rate on distributions" in Projected results). Sheltered income usually lowers your basis, so more of it is taxed when the property sells; this column doesn't count that later tax.</p>
         </details>`;
 }
 
@@ -1913,6 +1948,7 @@ function renderCardList() {
 }
 
 function renderResults() {
+  refreshAfterTaxYields();
   const totalFeePct = state.upfrontFeeRate + state.placementFeeRate;
   const portfolio = computePortfolio(state.dsts, state.fiduciary, totalFeePct);
 
@@ -1930,8 +1966,9 @@ function renderResults() {
     { label: "Upfront/Placement Fees", value: fmtUSD.format(portfolio.totalFees) },
     { label: "Cash flow income (year 1)", value: `${fmtUSD.format(portfolio.totalAnnualCashFlow)}/yr`, sub: `${fmtUSD.format(portfolio.totalMonthlyCashFlow)}/mo` },
     // Over the whole hold: distributions minus tax on the part that isn't
-    // sheltered. The one after-tax figure on the page -- everything else is
-    // pre-tax -- so the sub-line says what it is.
+    // sheltered. One of only two after-tax figures on the page (the other is
+    // each card's after-tax yield column) -- everything else is pre-tax --
+    // so the sub-line says what it is.
     { label: "After-tax cash flow", value: fmtUSD.format(afterTaxCashFlow), sub: `over the hold, ${fmtUSD.format(portfolio.totalShelteredIncome)} sheltered` },
     { label: "Appreciation gain", value: fmtUSD.format(portfolio.totalAppreciation) },
     ...(hasPaydown ? [{ label: "Debt paydown", value: fmtUSD.format(portfolio.totalDebtPaydown) }] : []),

@@ -30,12 +30,12 @@ Double-click `index.html`. There is no build step, no install and no external de
 - *Cash-on-cash (sets all years)*: one number that fills the whole yield schedule. Locked at 0% for zero coupon DSTs.
 - *Loan-to-value (LTV)*: debt as a share of the property's value, the way offering documents quote it. Most categories allow 0–70%; zero coupon allows 60–90%.
 - *Loan interest rate* and *Amortization term* (zero coupon only): the amortizing loan the rent pays down.
-- *Year-by-year yield & tax shelter*: a collapsible ten-row table. For each year 1–10, set the yield (% of net equity) and the share of that year's distribution that is tax-sheltered (%). Rows beyond the holding period are dimmed but still used by the Monte Carlo.
+- *Year-by-year yield & tax shelter*: a collapsible ten-row table. For each year 1–10, set the yield (% of net equity) and the share of that year's distribution that is tax-sheltered (%). Rows beyond the holding period are dimmed but still used by the Monte Carlo. A fourth, read-only column shows each year's **after-tax yield**: yield × (1 − unsheltered share × tax rate on distributions). For example, a 6% yield with 50% sheltered at a 37% rate gives 6 × (1 − 0.5 × 0.37) = 4.89%. It ignores the later tax at sale caused by the basis reduction.
 - *Appreciation rate*: annual, compounded on the full property value.
 - *Assumed holding period*: 4–10 years, shown against an illustrative bell curve.
 
 **Projected results**
-- *Tax rate on distributions*: applied to the part of each year's distribution that is not sheltered. It feeds only the after-tax cash flow figure.
+- *Tax rate on distributions*: applied to the part of each year's distribution that is not sheltered. It feeds the after-tax cash flow figure and the after-tax yield column in each card's schedule.
 
 **Fiduciary**
 - Off: an upfront fee and a placement fee are taken off the top before capital is invested. On: those two fees are removed. See "What this tool does not do" for the limits of that switch.
