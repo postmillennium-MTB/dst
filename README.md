@@ -39,6 +39,7 @@ Double-click `index.html`. There is no build step, no install and no external de
 
 **Fiduciary**
 - Off: an upfront fee and a placement fee are taken off the top before capital is invested. On: those two fees are removed. See "What this tool does not do" for the limits of that switch.
+- *Gross up* (shown while Fiduciary is on): expresses the waived load as principal. A loaded investor would need to commit *committed / (1 − load)* to put the same amount to work, so at the default 5% + 1.5% load, $1,000,000 grosses up to about $1,069,519, or roughly $69,519 of equivalent additional principal. That is more than the $65,000 load on $1,000,000 because a load is charged on the larger gross amount. The fee fields stay editable while it's open and the figure updates live. It is fee arithmetic only; no return assumption enters it.
 
 ## Theory
 
