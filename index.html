@@ -431,7 +431,10 @@ button:focus-visible,
 }
 /* Computed (read-only) after-tax yield column -- plain text, not an input, so
    it reads as an output of the two editable columns beside it. */
-.yield-table td.after-tax-yield { font-variant-numeric: tabular-nums; color: var(--text-secondary); white-space: nowrap; }
+/* The "after tax" sub-line may wrap so the column fits a phone-width card. */
+.yield-table td.after-tax-yield { font-variant-numeric: tabular-nums; color: var(--text-secondary); line-height: 1.2; }
+.yield-table td.after-tax-yield .tey { font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+.yield-table td.after-tax-yield .net { display: block; font-size: 0.72rem; color: var(--text-muted); }
 .dist-tax-row { margin-bottom: 14px; max-width: 260px; }
 
 /* ---- Below-minimum DST allocation warning ---------------------------------- */
@@ -1828,7 +1831,23 @@ function dstSummaryHTML(dst) {
 function afterTaxYield(yieldPct, shelteredPct) {
   return yieldPct * (1 - (1 - shelteredPct / 100) * (state.ordinaryRate / 100));
 }
-const fmtYieldPct = x => x.toFixed(2) + "%";
+
+// Taxable-equivalent yield: the yield a FULLY taxed investment would need, at
+// the same rate, to leave the same after-tax cash -- after-tax / (1 - rate).
+// This is the column's headline because it's the figure that rises with the
+// shelter (5% at 50% sheltered, 37% rate -> 6.47%); plain after-tax yield can
+// never exceed the pre-tax yield, which read as "the shelter costs me money".
+// Undefined at a 100% rate (nothing taxable keeps any cash), so null there.
+function taxableEquivYield(yieldPct, shelteredPct) {
+  const rate = state.ordinaryRate / 100;
+  return rate >= 1 ? null : afterTaxYield(yieldPct, shelteredPct) / (1 - rate);
+}
+const fmtYieldPct = x => x === null ? "\u2014" : x.toFixed(2) + "%";
+
+// One cell of the column: taxable-equivalent on top, after-tax beneath.
+function yieldCellHTML(yieldPct, shelteredPct) {
+  return `<span class="tey">${fmtYieldPct(taxableEquivYield(yieldPct, shelteredPct))}</span><span class="net">${fmtYieldPct(afterTaxYield(yieldPct, shelteredPct))} after tax</span>`;
+}
 
 // Re-fills the after-tax yield column of every open-or-closed schedule in
 // place. Called from renderResults(), which runs after every input change --
@@ -1838,7 +1857,7 @@ function refreshAfterTaxYields() {
   state.dsts.forEach(dst => {
     dstListEl.querySelectorAll(`.yield-schedule[data-id="${dst.id}"] [data-after-tax-year]`).forEach(td => {
       const t = Number(td.dataset.afterTaxYear);
-      td.textContent = fmtYieldPct(afterTaxYield(dst.yields[t], dst.sheltered[t]));
+      td.innerHTML = yieldCellHTML(dst.yields[t], dst.sheltered[t]);
     });
   });
 }
@@ -1855,16 +1874,16 @@ function yieldScheduleHTML(dst) {
           data-field="yields" data-year="${t}" data-id="${dst.id}"></td>
         <td><input type="number" min="0" max="100" step="1" value="${dst.sheltered[t]}" aria-label="Year ${t + 1} tax-sheltered share, percent"
           data-field="sheltered" data-year="${t}" data-id="${dst.id}"></td>
-        <td class="after-tax-yield" data-after-tax-year="${t}">${fmtYieldPct(afterTaxYield(y, dst.sheltered[t]))}</td>
+        <td class="after-tax-yield" data-after-tax-year="${t}">${yieldCellHTML(y, dst.sheltered[t])}</td>
       </tr>`).join("");
   return `
         <details class="yield-schedule" data-id="${dst.id}"${dst.scheduleOpen ? " open" : ""}>
           <summary>Year-by-year yield &amp; tax shelter</summary>
           <table class="yield-table">
-            <thead><tr><th>Year</th><th>Yield, %/yr</th><th>Tax-sheltered, %</th><th>After-tax yield</th></tr></thead>
+            <thead><tr><th>Year</th><th>Yield, %/yr</th><th>Tax-sheltered, %</th><th>Taxable-equiv. yield</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
-          <p class="field-note">Yield is the distribution as a % of net equity. Tax-sheltered is the share of that year's distribution not taxed currently (typically offset by depreciation). After-tax yield = yield &times; (1 &minus; unsheltered share &times; the "Tax rate on distributions" in Projected results). Sheltered income usually lowers your basis, so more of it is taxed when the property sells; this column doesn't count that later tax.</p>
+          <p class="field-note">Yield is the distribution as a % of net equity. Tax-sheltered is the share of that year's distribution not taxed currently (typically offset by depreciation). After tax = yield &times; (1 &minus; unsheltered share &times; the "Tax rate on distributions" in Projected results). Taxable-equivalent = after tax &divide; (1 &minus; that rate): what a fully taxed investment would have to yield to leave you the same cash. Sheltered income usually lowers your basis, so more of it is taxed when the property sells; this column doesn't count that later tax.</p>
         </details>`;
 }
 
