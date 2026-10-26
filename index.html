@@ -12,7 +12,8 @@
     · DESIGN TOKENS .............. the single light palette + category colors
     · BASE + LAYOUT .............. body, .page, .panel card shell
     · FIELD PRIMITIVES ........... labels, number inputs, custom steppers
-    · PROCEEDS / BOOT ............ allocation banner, boot banner, advanced tax
+    · PROCEEDS / BOOT ............ allocation banner, boot banner
+    · TAX ASSUMPTIONS ............ cap gains, state tax, NIIT, advanced recapture
     · DST CARDS .................. per-DST card grid, bell curve holder
     · RESULTS .................... stat tiles, gain-mix donut, breakdown table
     · FIDUCIARY SWITCH ........... the toggle, its fee-rate fields, the gross-up button
@@ -30,6 +31,7 @@
     · tuning constants ........... simulation size, chart geometry, epsilons
     · state ...................... the single source of truth for the whole UI
     · computeDst / computePortfolio  the return model (pure functions)
+    · taxAddOnPct / withAddOns ... state tax + NIIT stacked on each federal rate
     · splitGainTax ............... shared recapture-then-capital-gains split
     · computeBoot / computeTheoreticalTax  the two tax views
     · runMonteCarlo .............. holding-period simulation
@@ -240,7 +242,8 @@ select:focus-visible,
 input[type="range"]:focus-visible,
 button:focus-visible,
 .panel-head:focus-visible,
-.advanced-toggle input:focus-visible,
+.advanced-toggle input:focus-visible + .check-box,
+.yield-schedule summary:focus-visible,
 .switch input:focus-visible ~ .switch-track {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
@@ -377,6 +380,13 @@ button:focus-visible,
 .boot-banner.hidden { display: none; }
 .boot-banner.warn strong.negative { color: #c22; }
 
+/* ---- Tax assumptions panel ------------------------------------------------- */
+.tax-row { display: flex; flex-wrap: wrap; gap: 14px 20px; align-items: flex-end; }
+.tax-row .field { max-width: 200px; flex: 1 1 170px; }
+.tax-row .advanced-toggle { flex: 1 1 260px; min-height: 48px; }
+.tax-combined { font-size: 0.84rem; color: var(--text-secondary); margin-top: 12px; line-height: 1.5; }
+.tax-combined strong { color: var(--text-primary); }
+
 /* ---- Advanced tax details (depreciation recapture + debt-relief boot) ----- */
 #advTaxPanel { margin-top: 14px; display: none; }
 #advTaxPanel.visible { display: block; }
@@ -403,13 +413,36 @@ button:focus-visible,
 /* ---- Year-by-year yield schedule (inside each DST card) --------------------
    A <details> so the ten-row table stays out of the way until someone wants
    it; the single cash-on-cash field above it fills every year at once. */
+/* The summary is styled as a full-width bar (not the browser's small
+   disclosure triangle) so it reads as a control on video and on a phone; the
+   Lucide panel-top-open / panel-bottom-open icon says which way it will go. */
 .yield-schedule { grid-column: 1 / -1; }
 .yield-schedule summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--surface-card);
   cursor: pointer;
-  font-size: 0.82rem;
+  user-select: none;
+  font-size: 0.92rem;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--text-primary);
 }
+.yield-schedule summary::-webkit-details-marker { display: none; }
+.yield-schedule summary:hover { background: var(--surface-page); }
+.yield-schedule summary .sched-icon { display: inline-flex; color: var(--accent); flex-shrink: 0; }
+.yield-schedule summary .sched-icon svg { width: 22px; height: 22px; display: block; }
+.yield-schedule summary .sched-action { margin-left: auto; font-size: 0.8rem; font-weight: 600; color: var(--accent); }
+.yield-schedule summary .ic-close, .yield-schedule[open] summary .ic-open { display: none; }
+.yield-schedule[open] summary .ic-close { display: inline-flex; }
+.yield-schedule .sched-action::after { content: "Show"; }
+.yield-schedule[open] .sched-action::after { content: "Hide"; }
 .yield-table { border-collapse: collapse; margin-top: 8px; font-size: 0.84rem; }
 .yield-table th { text-align: left; font-weight: 600; color: var(--text-muted); padding: 4px 8px 4px 0; }
 .yield-table td { padding: 3px 6px 3px 0; }
@@ -676,7 +709,20 @@ tr.total-row td { font-weight: 700; border-top: 2px solid var(--axis); border-bo
   user-select: none;
   min-height: 40px;
 }
-.advanced-toggle input { width: 16px; height: 16px; accent-color: var(--accent); }
+/* The real checkbox stays in the DOM (keyboard, screen readers, form state)
+   but is visually replaced by the Lucide square / square-check pair that
+   enhanceCheckboxes() injects right after it. The checked state is shape AND
+   color (the check mark), never color alone. */
+.advanced-toggle { position: relative; }
+.advanced-toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+.check-box { display: inline-flex; flex-shrink: 0; color: var(--text-secondary); border-radius: 5px; }
+.check-box svg { width: 22px; height: 22px; display: block; }
+.check-box .ic-on { display: none; }
+.advanced-toggle input:checked + .check-box { color: var(--accent); }
+.advanced-toggle input:checked + .check-box .ic-on { display: block; }
+.advanced-toggle input:checked + .check-box .ic-off { display: none; }
+.advanced-toggle:hover .check-box { color: var(--text-primary); }
+.advanced-toggle:hover input:checked + .check-box { color: var(--accent); }
 #mcPanel { margin-top: 18px; display: none; }
 #mcPanel.visible { display: block; }
 .mc-stats { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 14px; font-size: 0.88rem; color: var(--text-secondary); }
@@ -789,7 +835,6 @@ footer.disclaimer .pmr-link { display: inline-block; margin-top: 4px; font-weigh
          exchange, proceeds (or debt reduction) not rolled into replacement
          property are boot and are taxable in the year received. -->
     <div class="proceeds-row boot-row">
-      <div id="capGainsFieldWrap" class="field-mount"></div>
       <div class="boot-banner hidden" id="bootBanner">
         <span>Cash taken out (boot) <strong id="bootAmount">$0</strong></span>
         <span id="bootDebtReliefRow" class="hidden">Debt-relief boot <strong id="bootDebtRelief">$0</strong></span>
@@ -797,12 +842,35 @@ footer.disclaimer .pmr-link { display: inline-block; margin-top: 4px; font-weigh
         <span>You keep <strong id="bootNet">$0</strong></span>
       </div>
     </div>
+    </div>
+  </section>
+
+  <!-- ======================= TAX ASSUMPTIONS ======================= -->
+  <!-- Every rate the tax math uses for boot and the outright-sale comparison,
+       in one collapsible card. State tax and the 3.8% NIIT are add-ons that
+       stack on top of each federal rate (see taxAddOnPct). -->
+  <section class="panel">
+    <div class="panel-head" data-panel-toggle tabindex="0" role="button" aria-expanded="true">
+      <h2>Tax assumptions</h2>
+      <span class="collapse-btn" aria-hidden="true"></span>
+    </div>
+    <div class="panel-body">
+    <p class="hint">Rates applied to boot, to the "if you'd sold instead" comparison, and to the taxable part of DST distributions. State tax and the NIIT are added on top of each federal rate.</p>
+    <div class="tax-row">
+      <div id="capGainsFieldWrap" class="field-mount"></div>
+      <div id="stateTaxFieldWrap" class="field-mount"></div>
+      <label class="advanced-toggle">
+        <input type="checkbox" id="niitToggle">
+        3.8% net investment income tax
+      </label>
+    </div>
+    <p class="tax-combined" id="taxCombined"></p>
 
     <!-- Advanced: real 1031 boot isn't always one flat rate -- depreciation
          recapture is taxed first (up to 25% federal) before any remaining
          gain gets the capital-gains rate above. Off by default so the
          common case stays a single flat-rate estimate. (Debt-relief boot,
-         above, always applies -- it isn't gated by this toggle.) -->
+         in Exchange proceeds, always applies -- it isn't gated by this toggle.) -->
     <label class="advanced-toggle" style="margin-top:14px;">
       <input type="checkbox" id="advTaxToggle">
       Advanced: depreciation recapture
@@ -810,7 +878,8 @@ footer.disclaimer .pmr-link { display: inline-block; margin-top: 4px; font-weigh
     <div id="advTaxPanel">
       <p class="hint" style="margin-top:10px;">
         Depreciation recapture is recognized first (up to the lesser of accumulated depreciation or total
-        taxable boot), taxed at the recapture rate; any remaining boot is taxed at the capital gains rate above.
+        taxable boot), taxed at the recapture rate; any remaining boot is taxed at the capital gains rate above. State tax
+        and the NIIT, if included, are added to both rates.
       </p>
       <div id="advTaxFieldsWrap" class="adv-tax-fields"></div>
       <div class="boot-detail" id="bootDetail"></div>
@@ -913,8 +982,8 @@ footer.disclaimer .pmr-link { display: inline-block; margin-top: 4px; font-weigh
       <h3 class="subhead">If you'd sold instead of exchanged</h3>
       <p class="hint">
         Enter what you originally paid for the relinquished property (plus improvements, less depreciation
-        taken) and this estimates the tax bill from selling it outright, using the cap. gains rate — and, if
-        Advanced depreciation recapture is on, the same recapture split — from the Exchange proceeds card above.
+        taken) and this estimates the tax bill from selling it outright, using the rates — and, if
+        Advanced depreciation recapture is on, the same recapture split — from Tax assumptions above.
         Compare it against the boot tax to see what the exchange defers.
       </p>
       <div class="proceeds-row">
@@ -962,11 +1031,12 @@ footer.disclaimer .pmr-link { display: inline-block; margin-top: 4px; font-weigh
   <footer class="disclaimer">
     <p>
       This tool illustrates how DST return mechanics work. It is <strong>not investment, tax, or legal
-      advice</strong>. Its tax figures are rough estimates: it models federal capital-gains tax and,
-      optionally, unrecaptured Section 1250 depreciation recapture, both at rates you supply. It does
-      <em>not</em> model state or local tax, the 3.8% net investment income tax, passive-activity or
-      at-risk limits, distribution timing, sponsor-specific fees beyond the two modeled here, or the
-      terms of any actual offering.
+      advice</strong>. Its tax figures are rough estimates: it models federal capital-gains tax, optionally
+      unrecaptured Section 1250 depreciation recapture, a single flat state rate, and optionally the 3.8%
+      net investment income tax, all at rates you supply and simply added together. It does <em>not</em>
+      model local tax, the deductibility of state tax, the income thresholds that decide whether the NIIT
+      applies, passive-activity or at-risk limits, distribution timing, sponsor-specific fees beyond the
+      two modeled here, or the terms of any actual offering.
     </p>
     <p>
       The default per-category return figures are illustrative placeholders, not researched market data
@@ -1023,6 +1093,10 @@ const ICON_PATHS = {
   down:          `<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 8v8"/><path d="m8 12 4 4 4-4"/>`,
   handshake:     `<path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"/><path d="M3 4h8"/>`,
   chevronDown:   `<path d="m6 9 6 6 6-6"/>`,
+  square:        `<rect width="18" height="18" x="3" y="3" rx="2"/>`,
+  squareCheck:   `<rect width="18" height="18" x="3" y="3" rx="2"/><path d="m16 9-5.5 5.5L8 12"/>`,
+  panelTopOpen:  `<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="m15 14-3 3-3-3"/>`,
+  panelBottomOpen: `<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 15h18"/><path d="m9 10 3-3 3 3"/>`,
   landmark:      `<path d="M10 18v-7"/><path d="M11.119 2.205a2 2 0 0 1 1.762 0l7.84 3.846A.5.5 0 0 1 20.5 7h-17a.5.5 0 0 1-.22-.949z"/><path d="M14 18v-7"/><path d="M18 18v-7"/><path d="M3 22h18"/><path d="M6 18v-7"/>`,
 };
 
@@ -1138,19 +1212,28 @@ const DEFAULT_PLACEMENT_FEE_PCT = 1.5;
 // Default capital gains rate assumed for "boot" -- 1031 exchange proceeds
 // that are cashed out instead of rolled into a DST. Just a starting point
 // for the editable "Cap. gains rate" field; 20% is the top federal
-// long-term rate (state tax and the 3.8% NIIT surtax aren't modeled here).
+// long-term rate. State tax and the 3.8% NIIT are separate add-ons below.
 const DEFAULT_CAP_GAINS_RATE_PCT = 20;
 
 // Default rate for the "Advanced" depreciation-recapture split -- 25% is the
-// maximum federal rate on unrecaptured Section 1250 gain (state tax isn't
-// modeled here, same as the capital gains rate above).
+// maximum federal rate on unrecaptured Section 1250 gain (federal only, same
+// as the capital gains rate above; the add-ons below stack on top).
 const DEFAULT_DEP_RECAPTURE_RATE_PCT = 25;
 
 // Default rate on the NON-sheltered part of DST distributions, which is
 // ordinary income. 37% is the top federal bracket; like the rates above it
-// leaves out state tax and the 3.8% NIIT. Just the starting value of the
-// editable "Tax rate on distributions" field.
+// is federal only (the add-ons below stack on top). Just the starting value
+// of the editable "Tax rate on distributions" field.
 const DEFAULT_ORDINARY_RATE_PCT = 37;
+
+// Tax add-ons, from the Tax assumptions card. Both are simply ADDED to every
+// federal rate above (capital gains, recapture, distributions) -- a flat
+// approximation that ignores the deductibility of state tax and the NIIT's
+// income thresholds (the footer says so). State defaults to 0 because the
+// right figure depends entirely on where the investor files; the NIIT
+// defaults off because whether it applies depends on income.
+const DEFAULT_STATE_TAX_PCT = 0;
+const NIIT_RATE_PCT = 3.8;
 
 // Default share of each year's distribution sheltered from current tax
 // (by depreciation passed through to the investor). 0, not a typical-looking
@@ -1201,10 +1284,11 @@ const SCALAR_FIELDS = [
   { id: "totalProceeds",     stateKey: "totalProceeds",           urlKey: "tp", label: "Total 1031 proceeds",           min: 0, max: MAX_DOLLAR_FIELD, step: 10000, prefix: "$", mount: "totalProceedsFieldWrap" },
   { id: "relinquishedDebt",  stateKey: "relinquishedDebt",        urlKey: "rd", label: "Debt on relinquished property", min: 0, max: MAX_DOLLAR_FIELD, step: 10000, prefix: "$", mount: "relinquishedDebtFieldWrap" },
   { id: "capGainsRate",      stateKey: "capGainsRate",            urlKey: "cg", label: "Cap. gains rate",               min: 0, max: 100, step: 1,   suffix: "%", mount: "capGainsFieldWrap" },
+  { id: "stateTaxRate",      stateKey: "stateTaxRate",            urlKey: "st", label: "State tax",                     min: 0, max: 20,  step: 0.25, suffix: "%", mount: "stateTaxFieldWrap" },
   { id: "accumDepreciation", stateKey: "accumulatedDepreciation", urlKey: "ad", label: "Accumulated depreciation",      min: 0, max: MAX_DOLLAR_FIELD, step: 10000, prefix: "$", mount: "advTaxFieldsWrap" },
   { id: "depRecaptureRate",  stateKey: "depRecaptureRate",        urlKey: "dr", label: "Recapture rate",                min: 0, max: 100, step: 1,   suffix: "%", mount: "advTaxFieldsWrap" },
-  { id: "upfrontFeeRate",    stateKey: "upfrontFeeRate",          urlKey: "uf", label: "Upfront fee",                   min: 0, max: 100, step: 0.5, suffix: "%", mount: "feeRatesFieldsWrap", onChange: "updateFiduciaryHint" },
-  { id: "placementFeeRate",  stateKey: "placementFeeRate",        urlKey: "pf", label: "Placement fee",                 min: 0, max: 100, step: 0.5, suffix: "%", mount: "feeRatesFieldsWrap", onChange: "updateFiduciaryHint" },
+  { id: "upfrontFeeRate",    stateKey: "upfrontFeeRate",          urlKey: "uf", label: "Upfront fee",                   min: 0, max: 100, step: 0.25, suffix: "%", mount: "feeRatesFieldsWrap", onChange: "updateFiduciaryHint" },
+  { id: "placementFeeRate",  stateKey: "placementFeeRate",        urlKey: "pf", label: "Placement fee",                 min: 0, max: 100, step: 0.25, suffix: "%", mount: "feeRatesFieldsWrap", onChange: "updateFiduciaryHint" },
   { id: "ordinaryRate",      stateKey: "ordinaryRate",            urlKey: "or", label: "Tax rate on distributions",     min: 0, max: 100, step: 1,   suffix: "%", mount: "ordIncomeFieldWrap" },
   { id: "costBasis",         stateKey: "costBasis",               urlKey: "cb", label: "Cost basis",                    min: 0, max: MAX_DOLLAR_FIELD, step: 10000, prefix: "$", mount: "costBasisFieldWrap", blankable: true },
 ];
@@ -1258,6 +1342,8 @@ const state = {
   placementFeeRate: DEFAULT_PLACEMENT_FEE_PCT, // editable; charged while !fiduciary, used as the comparison load by the gross-up
   grossUp: false,  // "Gross up" readout showing; only offered while fiduciary
   capGainsRate: DEFAULT_CAP_GAINS_RATE_PCT,    // applied to any boot (unallocated proceeds taken as cash)
+  stateTaxRate: DEFAULT_STATE_TAX_PCT,         // added to every federal rate (see taxAddOnPct)
+  niit: false,                                 // true adds NIIT_RATE_PCT to every federal rate
   ordinaryRate: DEFAULT_ORDINARY_RATE_PCT,     // applied to the non-sheltered part of DST distributions
   // null, NOT 0. A zero cost basis is the maximum-gain assumption -- it claims
   // the property was acquired for nothing -- so defaulting to it would print a
@@ -1345,12 +1431,23 @@ const trimNum = n => Number(Number(n).toFixed(4));
    cash flow / appreciation. Profit and annualized return are then measured
    against `grossAmount` -- what the investor really gave up -- so the fee
    shows up as a return drag, not just a footnote.
+
+   Gross-up (Fiduciary on + Gross up pressed): a load is charged on the
+   offering price, so a no-load purchase at the net-of-load price buys more of
+   the offering for the same dollars -- committed / (1 - load). `equity` then
+   becomes that grossed-up amount and everything downstream (distributions,
+   leverage, appreciation) runs on it, while profit and return stay measured
+   against `grossAmount`, the dollars actually committed. `grossUpAdded` is
+   the difference, reported so the results can say where it came from.
    ---------------------------------------------------------------------------- */
-function computeDst(dst, fiduciary, totalFeePct) {
+function computeDst(dst, fiduciary, totalFeePct, grossUp = false) {
   const grossAmount = dst.amount;
   const feeRate = fiduciary ? 0 : totalFeePct / 100;
   const feesPaid = grossAmount * feeRate;
-  const equity = grossAmount - feesPaid; // net capital actually put to work
+  // A 100%+ load has no gross-up (it would divide by zero); renderGrossUp says so.
+  const grossUpFactor = fiduciary && grossUp && totalFeePct < 100 ? 1 / (1 - totalFeePct / 100) : 1;
+  const equity = (grossAmount - feesPaid) * grossUpFactor; // net capital actually put to work
+  const grossUpAdded = equity - (grossAmount - feesPaid);
 
   const leveragedValue = equity / (1 - dst.leverage / 100);
   const debt = leveragedValue - equity;
@@ -1403,7 +1500,7 @@ function computeDst(dst, fiduciary, totalFeePct) {
   const totalProfit = finalValue - grossAmount; // profit relative to what was originally committed (fee included as a drag)
   const annualizedReturn = dst.years > 0 && grossAmount > 0 ? Math.pow(finalValue / grossAmount, 1 / dst.years) - 1 : 0;
 
-  return { grossAmount, feesPaid, equity, leveragedValue, debt, annualCashFlow, monthlyCashFlow, cashFlowIncome, shelteredIncome, appreciationGain, debtPaydown, totalProfit, finalValue, annualizedReturn };
+  return { grossAmount, feesPaid, grossUpAdded, equity, leveragedValue, debt, annualCashFlow, monthlyCashFlow, cashFlowIncome, shelteredIncome, appreciationGain, debtPaydown, totalProfit, finalValue, annualizedReturn };
 }
 
 // A schedule with the same value every year -- what a new card starts with,
@@ -1431,13 +1528,14 @@ function remainingLoanBalance(principal, ratePct, amortYears, years) {
 // individual cash flows / exit), but is accurate for the totals and is
 // clearly documented here if a true multi-cashflow IRR is ever wanted
 // instead.
-function computePortfolio(dsts, fiduciary, totalFeePct) {
+function computePortfolio(dsts, fiduciary, totalFeePct, grossUp = false) {
   if (dsts.length === 0) {
-    return { totalGross: 0, totalFees: 0, totalEquity: 0, totalAnnualCashFlow: 0, totalMonthlyCashFlow: 0, totalCashFlow: 0, totalShelteredIncome: 0, totalAppreciation: 0, totalDebtPaydown: 0, totalProfit: 0, totalFinalValue: 0, blendedAnnualizedReturn: 0, weightedYears: 0, rows: [] };
+    return { totalGross: 0, totalFees: 0, totalGrossUp: 0, totalEquity: 0, totalAnnualCashFlow: 0, totalMonthlyCashFlow: 0, totalCashFlow: 0, totalShelteredIncome: 0, totalAppreciation: 0, totalDebtPaydown: 0, totalProfit: 0, totalFinalValue: 0, blendedAnnualizedReturn: 0, weightedYears: 0, rows: [] };
   }
-  const rows = dsts.map(d => ({ dst: d, ...computeDst(d, fiduciary, totalFeePct) }));
+  const rows = dsts.map(d => ({ dst: d, ...computeDst(d, fiduciary, totalFeePct, grossUp) }));
   const totalGross = rows.reduce((s, r) => s + r.grossAmount, 0);
   const totalFees = rows.reduce((s, r) => s + r.feesPaid, 0);
+  const totalGrossUp = rows.reduce((s, r) => s + r.grossUpAdded, 0);
   const totalEquity = rows.reduce((s, r) => s + r.equity, 0);
   // Annual/monthly are plain sums -- they're rates, not totals, so no
   // holding-period weighting applies (unlike weightedYears/equityMultiple
@@ -1456,7 +1554,7 @@ function computePortfolio(dsts, fiduciary, totalFeePct) {
   const equityMultiple = totalGross > 0 ? totalFinalValue / totalGross : 0;
   const blendedAnnualizedReturn = weightedYears > 0 ? Math.pow(equityMultiple, 1 / weightedYears) - 1 : 0;
 
-  return { totalGross, totalFees, totalEquity, totalAnnualCashFlow, totalMonthlyCashFlow, totalCashFlow, totalShelteredIncome, totalAppreciation, totalDebtPaydown, totalProfit, totalFinalValue, blendedAnnualizedReturn, weightedYears, rows };
+  return { totalGross, totalFees, totalGrossUp, totalEquity, totalAnnualCashFlow, totalMonthlyCashFlow, totalCashFlow, totalShelteredIncome, totalAppreciation, totalDebtPaydown, totalProfit, totalFinalValue, blendedAnnualizedReturn, weightedYears, rows };
 }
 
 /* ----------------------------------------------------------------------------
@@ -1486,14 +1584,23 @@ function splitGainTax(gain, opts) {
   return { recaptureTax, capGainTax, tax: recaptureTax + capGainTax };
 }
 
+// State tax + NIIT, in percentage points, added on top of each federal rate.
+// The ONE place the add-ons are read, so boot, the outright-sale comparison
+// and the distribution figures can't disagree about them.
+function taxAddOnPct() {
+  return state.stateTaxRate + (state.niit ? NIIT_RATE_PCT : 0);
+}
+// A federal rate plus the add-ons, capped at 100%.
+const withAddOns = federalPct => Math.min(federalPct + taxAddOnPct(), 100);
+
 // One place that reads the tax inputs off `state`, so the two views below
 // can't drift apart by being handed different options.
 function taxOpts() {
   return {
-    capGainsRatePct: state.capGainsRate,
+    capGainsRatePct: withAddOns(state.capGainsRate),
     advancedTax: state.advancedTax,
     accumulatedDepreciation: state.accumulatedDepreciation,
-    depRecaptureRatePct: state.depRecaptureRate,
+    depRecaptureRatePct: withAddOns(state.depRecaptureRate),
     relinquishedDebt: state.relinquishedDebt,
   };
 }
@@ -1593,14 +1700,14 @@ function buildWeightedSampler(weights) {
 }
 const sampleHoldYears = buildWeightedSampler(HOLD_PERIOD_WEIGHTS);
 
-function runMonteCarlo(dsts, iterations, fiduciary, totalFeePct) {
+function runMonteCarlo(dsts, iterations, fiduciary, totalFeePct, grossUp = false) {
   const returns = [];
   const profits = [];
   for (let i = 0; i < iterations; i++) {
     let totalGross = 0, totalFinal = 0, weightedYearsSum = 0;
     for (const d of dsts) {
       const draw = { ...d, years: sampleHoldYears() };
-      const r = computeDst(draw, fiduciary, totalFeePct);
+      const r = computeDst(draw, fiduciary, totalFeePct, grossUp);
       totalGross += r.grossAmount;
       totalFinal += r.finalValue;
       weightedYearsSum += r.grossAmount * draw.years;
@@ -1813,6 +1920,8 @@ const bootDebtReliefEl = document.getElementById("bootDebtRelief");
 const bootTaxEl = document.getElementById("bootTax");
 const bootNetEl = document.getElementById("bootNet");
 const advTaxToggleEl = document.getElementById("advTaxToggle");
+const niitToggleEl = document.getElementById("niitToggle");
+const taxCombinedEl = document.getElementById("taxCombined");
 const advTaxPanelEl = document.getElementById("advTaxPanel");
 const bootDetailEl = document.getElementById("bootDetail");
 const feeRatesPanelEl = document.getElementById("feeRatesPanel");
@@ -1851,11 +1960,12 @@ function dstSummaryHTML(dst) {
 }
 
 // After-tax yield for one year of the schedule: only the unsheltered part of
-// the distribution is taxed, at the "Tax rate on distributions" field. Pure
+// the distribution is taxed, at the "Tax rate on distributions" field plus
+// the Tax assumptions add-ons. Pure
 // arithmetic on the year's two inputs -- deliberately ignores the basis
 // reduction that sheltering causes (that tax lands at sale, not this year).
 function afterTaxYield(yieldPct, shelteredPct) {
-  return yieldPct * (1 - (1 - shelteredPct / 100) * (state.ordinaryRate / 100));
+  return yieldPct * (1 - (1 - shelteredPct / 100) * (withAddOns(state.ordinaryRate) / 100));
 }
 
 // Taxable-equivalent yield: the yield a FULLY taxed investment would need, at
@@ -1865,7 +1975,7 @@ function afterTaxYield(yieldPct, shelteredPct) {
 // never exceed the pre-tax yield, which read as "the shelter costs me money".
 // Undefined at a 100% rate (nothing taxable keeps any cash), so null there.
 function taxableEquivYield(yieldPct, shelteredPct) {
-  const rate = state.ordinaryRate / 100;
+  const rate = withAddOns(state.ordinaryRate) / 100;
   return rate >= 1 ? null : afterTaxYield(yieldPct, shelteredPct) / (1 - rate);
 }
 const fmtYieldPct = x => x === null ? "\u2014" : x.toFixed(2) + "%";
@@ -1904,12 +2014,17 @@ function yieldScheduleHTML(dst) {
       </tr>`).join("");
   return `
         <details class="yield-schedule" data-id="${dst.id}"${dst.scheduleOpen ? " open" : ""}>
-          <summary>Year-by-year yield &amp; tax shelter</summary>
+          <summary>
+            <span class="sched-icon ic-open">${svgIcon("panelTopOpen", 22)}</span>
+            <span class="sched-icon ic-close">${svgIcon("panelBottomOpen", 22)}</span>
+            <span>Year-by-year yield &amp; tax shelter</span>
+            <span class="sched-action" aria-hidden="true"></span>
+          </summary>
           <table class="yield-table">
             <thead><tr><th>Year</th><th>Yield, %/yr</th><th>Tax-sheltered, %</th><th>Taxable-equiv. yield</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
-          <p class="field-note">Yield is the distribution as a % of net equity. Tax-sheltered is the share of that year's distribution not taxed currently (typically offset by depreciation). After tax = yield &times; (1 &minus; unsheltered share &times; the "Tax rate on distributions" in Projected results). Taxable-equivalent = after tax &divide; (1 &minus; that rate): what a fully taxed investment would have to yield to leave you the same cash. Sheltered income usually lowers your basis, so more of it is taxed when the property sells; this column doesn't count that later tax.</p>
+          <p class="field-note">Yield is the distribution as a % of net equity. Tax-sheltered is the share of that year's distribution not taxed currently (typically offset by depreciation). After tax = yield &times; (1 &minus; unsheltered share &times; the "Tax rate on distributions" in Projected results, plus any state tax and NIIT from Tax assumptions). Taxable-equivalent = after tax &divide; (1 &minus; that rate): what a fully taxed investment would have to yield to leave you the same cash. Sheltered income usually lowers your basis, so more of it is taxed when the property sells; this column doesn't count that later tax.</p>
         </details>`;
 }
 
@@ -1995,20 +2110,22 @@ function renderCardList() {
 function renderResults() {
   refreshAfterTaxYields();
   const totalFeePct = state.upfrontFeeRate + state.placementFeeRate;
-  const portfolio = computePortfolio(state.dsts, state.fiduciary, totalFeePct);
+  const portfolio = computePortfolio(state.dsts, state.fiduciary, totalFeePct, state.grossUp);
   renderGrossUp(portfolio.totalGross);
+  renderTaxCombined();
 
   // Debt paydown only exists for amortizing (zero coupon) DSTs, so its tile and
   // table column are shown only when one is in the portfolio -- otherwise it
   // would be a permanent $0 taking width from the columns that matter.
   const hasPaydown = state.dsts.some(d => d.loanRate !== undefined);
   const afterTaxCashFlow = portfolio.totalCashFlow
-    - (portfolio.totalCashFlow - portfolio.totalShelteredIncome) * (state.ordinaryRate / 100);
+    - (portfolio.totalCashFlow - portfolio.totalShelteredIncome) * (withAddOns(state.ordinaryRate) / 100);
   breakdownTableEl.classList.toggle("no-paydown", !hasPaydown);
 
   // Stat tiles
   const tiles = [
-    { label: "Net equity invested", value: fmtUSD.format(portfolio.totalEquity) },
+    { label: "Net equity invested", value: fmtUSD.format(portfolio.totalEquity),
+      ...(portfolio.totalGrossUp > FEE_EPSILON_USD ? { sub: `incl. +${fmtUSD.format(portfolio.totalGrossUp)} gross-up on ${fmtUSD.format(portfolio.totalGross)} committed` } : {}) },
     { label: "Upfront/Placement Fees", value: fmtUSD.format(portfolio.totalFees) },
     { label: "Cash flow income (year 1)", value: `${fmtUSD.format(portfolio.totalAnnualCashFlow)}/yr`, sub: `${fmtUSD.format(portfolio.totalMonthlyCashFlow)}/mo` },
     // Over the whole hold: distributions minus tax on the part that isn't
@@ -2078,6 +2195,23 @@ function renderResults() {
   if (mcToggleEl.checked) scheduleMonteCarlo();
 }
 
+// The rates the tax math actually uses once state tax and the NIIT are added,
+// so nobody has to do the addition in their head. Shown under the inputs in
+// Tax assumptions; recapture only appears while Advanced is on.
+function renderTaxCombined() {
+  const addOn = taxAddOnPct();
+  if (addOn <= 0) {
+    taxCombinedEl.innerHTML = "Federal rates only. Add a state rate or the NIIT to see combined rates here.";
+    return;
+  }
+  const parts = [
+    `capital gains <strong>${esc(trimNum(withAddOns(state.capGainsRate)))}%</strong>`,
+    ...(state.advancedTax ? [`recapture <strong>${esc(trimNum(withAddOns(state.depRecaptureRate)))}%</strong>`] : []),
+    `distributions <strong>${esc(trimNum(withAddOns(state.ordinaryRate)))}%</strong>`,
+  ];
+  taxCombinedEl.innerHTML = `Combined rates (federal + ${esc(trimNum(addOn))}% add-on): ${parts.join(" &middot; ")}`;
+}
+
 function renderBootBanner(portfolio) {
   const opts = taxOpts();
   const boot = computeBoot(state.totalProceeds, state.dsts, portfolio.rows, opts);
@@ -2107,8 +2241,8 @@ function renderBootBanner(portfolio) {
   } else {
     bootDetailEl.innerHTML = `
       <span>Total taxable boot <strong>${fmtUSD.format(boot.totalBoot)}</strong></span>
-      <span>Depreciation recapture tax (@${esc(trimNum(state.depRecaptureRate))}%) <strong>${fmtUSD.format(boot.recaptureTax)}</strong></span>
-      <span>Capital gains tax (@${esc(trimNum(state.capGainsRate))}%) <strong>${fmtUSD.format(boot.capGainTax)}</strong></span>
+      <span>Depreciation recapture tax (@${esc(trimNum(withAddOns(state.depRecaptureRate)))}%) <strong>${fmtUSD.format(boot.recaptureTax)}</strong></span>
+      <span>Capital gains tax (@${esc(trimNum(withAddOns(state.capGainsRate)))}%) <strong>${fmtUSD.format(boot.capGainTax)}</strong></span>
       <span>Total tax <strong>${fmtUSD.format(boot.tax)}</strong></span>`;
   }
 
@@ -2149,9 +2283,14 @@ function renderGainMix(portfolio) {
   // arrive at Total Profit, so the two figures part ways by exactly the fee.
   const fees = portfolio.totalFees;
   const parts = paydown > 0 ? "Cash flow + appreciation + debt paydown" : "Cash flow + appreciation";
+  // With the gross-up on, the extra principal comes back at sale on top of
+  // the gains, so Total Profit runs ahead of the sum by exactly that amount.
+  const grossUp = portfolio.totalGrossUp;
   const caption = fees > FEE_EPSILON_USD
     ? `${parts} = ${fmtUSD.format(sum)} — Total Profit is ${fmtUSD.format(portfolio.totalProfit)} after subtracting ${fmtUSD.format(fees)} in upfront/placement fees (switch to Fiduciary to remove that gap).`
-    : `${parts} = ${fmtUSD.format(sum)}, which equals Total Profit while Fiduciary is on (no fees to subtract).`;
+    : grossUp > FEE_EPSILON_USD
+      ? `${parts} = ${fmtUSD.format(sum)} — Total Profit is ${fmtUSD.format(portfolio.totalProfit)} because it also counts the ${fmtUSD.format(grossUp)} gross-up, returned with the rest of the equity at sale.`
+      : `${parts} = ${fmtUSD.format(sum)}, which equals Total Profit while Fiduciary is on (no fees to subtract).`;
 
   gainMixWrapEl.innerHTML = `
     <div class="gain-mix">
@@ -2207,7 +2346,7 @@ function renderMonteCarlo(totalFeePct) {
     mcStatsEl.innerHTML = `<span>Add at least one DST to run a simulation.</span>`;
     return;
   }
-  const result = runMonteCarlo(state.dsts, MC_ITERATIONS, state.fiduciary, totalFeePct);
+  const result = runMonteCarlo(state.dsts, MC_ITERATIONS, state.fiduciary, totalFeePct, state.grossUp);
   mcChartWrapEl.innerHTML = histogramSVG(result.returns, [
     { value: result.returnP10, label: "P10" },
     { value: result.returnP50, label: "P50" },
@@ -2224,7 +2363,7 @@ function updateFiduciaryHint() {
   const totalFeePct = state.upfrontFeeRate + state.placementFeeRate;
   fiduciaryHintEl.textContent = state.fiduciary
     ? "No upfront or placement fees applied."
-    : `A ${trimNum(state.upfrontFeeRate)}% upfront fee + ${trimNum(state.placementFeeRate)}% placement fee (${totalFeePct.toFixed(1)}% total) is deducted from each DST before it's invested.`;
+    : `A ${trimNum(state.upfrontFeeRate)}% upfront fee + ${trimNum(state.placementFeeRate)}% placement fee (${trimNum(totalFeePct)}% total) is deducted from each DST before it's invested.`;
   // Handshake icon appears only while acting as a fiduciary -- it's the
   // "no conflict of interest" signal, so it has nothing to say in the
   // commission/fee state.
@@ -2272,12 +2411,14 @@ function renderGrossUp(committed) {
   const grossedUp = committed / (1 - feeRate);
   const additional = grossedUp - committed;
   grossUpResultEl.innerHTML = `
-    <div class="gross-up-figure">+${fmtUSD.format(additional)}<span class="unit">equivalent additional principal</span></div>
-    <p class="gross-up-math">With no upfront or placement fee, all <b>${fmtUSD.format(committed)}</b> committed to DSTs is put to work.
-      To put that same amount to work under a ${esc(loadText)}, an investor would need to commit
-      <b>${fmtUSD.format(grossedUp)}</b>: <span class="nowrap">${fmtUSD.format(committed)} &divide; (1 &minus; ${trimNum(feeRate)})</span>.</p>
+    <div class="gross-up-figure">+${fmtUSD.format(additional)}<span class="unit">additional principal</span></div>
+    <p class="gross-up-math">A ${esc(loadText)} is charged on the offering price. Bought without the load, the
+      <b>${fmtUSD.format(committed)}</b> committed to DSTs covers <b>${fmtUSD.format(grossedUp)}</b> of the offering:
+      <span class="nowrap">${fmtUSD.format(committed)} &divide; (1 &minus; ${trimNum(feeRate)})</span>.
+      While Gross up is on, Projected results use ${fmtUSD.format(grossedUp)} as net equity invested; profit and return are still measured against the ${fmtUSD.format(committed)} committed.</p>
     <p class="gross-up-note">The gross-up exceeds the ${fmtUSD.format(committed * feeRate)} load on ${fmtUSD.format(committed)} because a load is charged on the larger gross amount.
-      Illustrative arithmetic based on the fee rates entered above; actual offering fees vary. Not a projection or guarantee of returns.</p>`;
+      With Fiduciary off, the tool instead deducts the load from equity, so the gap between the two views counts the load's effect twice; compare each view to its own committed amount.
+      Illustrative arithmetic based on the fee rates entered above; whether an offering prices a no-load purchase this way, and its actual fees, vary. Not a projection or guarantee of returns.</p>`;
 }
 
 // Hooks SCALAR_FIELDS entries can name in their `onChange`. Looked up by
@@ -2321,6 +2462,7 @@ function encodeState() {
   }
   parts.push(`fid=${state.fiduciary ? 1 : 0}`);
   if (state.grossUp) parts.push("gu=1");
+  if (state.niit) parts.push("ni=1");
   parts.push(`adv=${state.advancedTax ? 1 : 0}`);
   if (mcToggleEl.checked) parts.push("mc=1");
   if (state.dsts.length) {
@@ -2408,6 +2550,7 @@ function applyHashState(rawHash) {
   }
   if (params.has("fid")) { state.fiduciary = params.get("fid") === "1"; touched = true; }
   if (params.has("gu")) { state.grossUp = params.get("gu") === "1"; touched = true; }
+  if (params.has("ni")) { state.niit = params.get("ni") === "1"; touched = true; }
   if (params.has("adv")) { state.advancedTax = params.get("adv") === "1"; touched = true; }
   if (params.has("l") || params.has("d")) {
     const parsed = params.has("l")
@@ -2447,6 +2590,7 @@ function syncAllControls() {
   }
   fiduciaryToggleEl.checked = state.fiduciary;
   advTaxToggleEl.checked = state.advancedTax;
+  niitToggleEl.checked = state.niit;
   advTaxPanelEl.classList.toggle("visible", state.advancedTax);
   updateFiduciaryHint();
   renderCardList();
@@ -2551,9 +2695,24 @@ advTaxToggleEl.addEventListener("change", () => {
   scheduleUrlSync();
 });
 
+niitToggleEl.addEventListener("change", () => {
+  state.niit = niitToggleEl.checked;
+  renderResults();
+  scheduleUrlSync();
+});
+
+// Swap every .advanced-toggle checkbox's native box for the Lucide square /
+// square-check pair (see .check-box in <style>). Runs once: these checkboxes
+// are static markup, never rebuilt.
+function enhanceCheckboxes() {
+  document.querySelectorAll(".advanced-toggle input[type=checkbox]").forEach(input => {
+    input.insertAdjacentHTML("afterend", `<span class="check-box" aria-hidden="true"><span class="ic-off">${svgIcon("square", 22)}</span><span class="ic-on">${svgIcon("squareCheck", 22)}</span></span>`);
+  });
+}
+
 // Whole-panel collapse: click (or Enter/Space) anywhere on a .panel-head
 // toggles its parent .panel's `collapsed` class. One listener per header
-// rather than delegated on document, since there are only ever four of
+// rather than delegated on document, since there are only ever five of
 // these and they never get added/removed at runtime.
 document.querySelectorAll(".panel-head").forEach(head => {
   const toggle = () => {
@@ -2763,6 +2922,7 @@ document.body.classList.toggle("is-touch", isTouchDevice);
    ---------------------------------------------------------------------------- */
 function init() {
   buildScalarFields();
+  enhanceCheckboxes();
 
   state.dsts.push({ ...makeDst("industrial"), amount: 1200000 });
   state.dsts.push({ ...makeDst("multifamily"), amount: 800000 });

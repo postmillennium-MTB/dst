@@ -22,7 +22,12 @@ Double-click `index.html`. There is no build step, no install and no external de
 **Exchange proceeds**
 - *Total 1031 proceeds*: the amount being placed into DSTs.
 - *Debt on relinquished property*: drives the debt-relief boot check.
-- *Cap. gains rate*: applied to any boot.
+
+**Tax assumptions** (collapsible)
+- *Cap. gains rate*: federal rate applied to any boot and to the "if you'd sold instead" comparison.
+- *State tax* (default 0%, steps of 0.25%): a flat rate added on top of every federal rate (capital gains, recapture, distributions).
+- *3.8% net investment income tax* (default off): when checked, adds 3.8 points on top of every federal rate.
+- A line under the inputs shows the combined rates actually used.
 - *Advanced: depreciation recapture*: splits boot into recapture (taxed first, at the recapture rate) and capital gain.
 
 **Each DST card**
@@ -30,7 +35,7 @@ Double-click `index.html`. There is no build step, no install and no external de
 - *Cash-on-cash (sets all years)*: one number that fills the whole yield schedule. Locked at 0% for zero coupon DSTs.
 - *Loan-to-value (LTV)*: debt as a share of the property's value, the way offering documents quote it. Most categories allow 0–70%; zero coupon allows 60–90%.
 - *Loan interest rate* and *Amortization term* (zero coupon only): the amortizing loan the rent pays down.
-- *Year-by-year yield & tax shelter*: a collapsible ten-row table. For each year 1–10, set the yield (% of net equity) and the share of that year's distribution that is tax-sheltered (%). Rows beyond the holding period are dimmed but still used by the Monte Carlo. A fourth, read-only column shows each year's **taxable-equivalent yield**, with the after-tax yield beneath it. After-tax = yield × (1 − unsheltered share × tax rate on distributions). Taxable-equivalent = after-tax ÷ (1 − tax rate), the yield a fully taxed investment would need to leave the same cash. For example, a 5% yield with 50% sheltered at a 37% rate gives 4.07% after tax and 6.47% taxable-equivalent. Both ignore the later tax at sale caused by the basis reduction.
+- *Year-by-year yield & tax shelter*: a collapsible ten-row table. For each year 1–10, set the yield (% of net equity) and the share of that year's distribution that is tax-sheltered (%). Rows beyond the holding period are dimmed but still used by the Monte Carlo. A fourth, read-only column shows each year's **taxable-equivalent yield**, with the after-tax yield beneath it. After-tax = yield × (1 − unsheltered share × tax rate on distributions, plus state tax and NIIT). Taxable-equivalent = after-tax ÷ (1 − tax rate), the yield a fully taxed investment would need to leave the same cash. For example, a 5% yield with 50% sheltered at a 37% rate gives 4.07% after tax and 6.47% taxable-equivalent. Both ignore the later tax at sale caused by the basis reduction.
 - *Appreciation rate*: annual, compounded on the full property value.
 - *Assumed holding period*: 4–10 years, shown against an illustrative bell curve.
 
@@ -39,7 +44,7 @@ Double-click `index.html`. There is no build step, no install and no external de
 
 **Fiduciary**
 - Off: an upfront fee and a placement fee are taken off the top before capital is invested. On: those two fees are removed. See "What this tool does not do" for the limits of that switch.
-- *Gross up* (shown while Fiduciary is on): expresses the waived load as principal. A loaded investor would need to commit *committed / (1 − load)* to put the same amount to work, so at the default 5% + 1.5% load, $1,000,000 grosses up to about $1,069,519, or roughly $69,519 of equivalent additional principal. That is more than the $65,000 load on $1,000,000 because a load is charged on the larger gross amount. The fee fields stay editable while it's open and the figure updates live. It is fee arithmetic only; no return assumption enters it.
+- *Gross up* (shown while Fiduciary is on): a load is charged on the offering price, so a no-load purchase at the net-of-load price covers *committed / (1 − load)* of the offering. At the default 5% + 1.5% load, $1,000,000 grosses up to about $1,069,519, or roughly $69,519 of additional principal. That is more than the $65,000 load on $1,000,000 because a load is charged on the larger gross amount. While it is on, the grossed-up amount flows into Projected results as net equity invested (distributions, leverage and appreciation all run on it), and profit and return are still measured against the dollars committed. The fee fields stay editable (in 0.25% steps) and everything updates live. Caveat: with Fiduciary off the tool deducts the load from equity instead, so the gap between the Fiduciary-off view and the grossed-up view counts the load's effect twice.
 
 ## Theory
 
@@ -55,7 +60,7 @@ Profit and annualized return are measured against the gross amount committed, so
 
 ### Tax
 
-- **Boot**: unallocated proceeds plus any shortfall of replacement debt against relinquished debt, taxed at the capital gains rate (or the recapture-then-capital-gains split).
+- **Boot**: unallocated proceeds plus any shortfall of replacement debt against relinquished debt, taxed at the capital gains rate (or the recapture-then-capital-gains split), each plus any state tax and NIIT.
 - **After-tax cash flow**: total distributions minus (distributions − sheltered portion) × the tax rate on distributions.
 - **"If you'd sold instead"**: the same rates applied to proceeds minus cost basis. It stays hidden until a cost basis is entered, so the tool never assumes a $0 basis.
 
@@ -102,7 +107,7 @@ That shows the code computes what this README describes. It does not show the mo
 
 ## What this tool does not do
 
-- It does not model state or local tax, the 3.8% NIIT, passive-activity or at-risk limits, or the tax on zero coupon phantom income.
+- It treats state tax and the 3.8% NIIT as flat add-ons. It does not model local tax, the deductibility of state tax, the NIIT's income thresholds, passive-activity or at-risk limits, or the tax on zero coupon phantom income.
 - It does not model the basis reduction from sheltered distributions, which raises the gain taxed at sale.
 - It does not deduct disposition costs or sponsor promotes, or compute an IRR.
 - It does not model the sponsor-level fees (acquisition, financing, asset management, disposition) or advisory fees that apply even with the Fiduciary switch on.
