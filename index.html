@@ -15,7 +15,7 @@
     · PROCEEDS / BOOT ............ allocation banner, boot banner, advanced tax
     · DST CARDS .................. per-DST card grid, bell curve holder
     · RESULTS .................... stat tiles, gain-mix donut, breakdown table
-    · FIDUCIARY SWITCH ........... the toggle and its fee-rate fields
+    · FIDUCIARY SWITCH ........... the toggle, its fee-rate fields, the gross-up button
     · FOOTER ..................... disclaimer, citations, PMR link
 
   <script>
@@ -35,6 +35,7 @@
     · runMonteCarlo .............. holding-period simulation
     · charts ..................... bellCurveSVG, histogramSVG, donutSVG
     · renderCardList / renderResults  the two render entry points
+    · renderGrossUp .............. fiduciary gross-up readout (fee arithmetic only)
     · URL STATE .................. hash encode/decode + iframe hash bridge
     · EVENT WIRING ............... all listeners, built from the registries
     · init() ..................... seeds the example portfolio, applies any hash
@@ -698,6 +699,23 @@ tr.total-row td { font-weight: 700; border-top: 2px solid var(--axis); border-bo
 .is-touch .switch-thumb { width: 24px; height: 24px; }
 .is-touch .switch input:checked ~ .switch-track .switch-thumb { transform: translateX(20px); }
 
+/* ---- Fiduciary gross-up ----------------------------------------------------
+   Only offered while Fiduciary is on: it answers "what is the waived load worth
+   in principal terms?", which has no meaning once a load is being charged.
+   The button is a toggle (aria-pressed), so its pressed look must not rely on
+   color alone -- the label also gains a check mark. */
+#grossUpRow { margin-top: 10px; display: none; }
+#grossUpRow.visible { display: block; }
+button.toggle-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+#grossUpResult { margin-top: 14px; display: none; max-width: 78ch; }
+#grossUpResult.visible { display: block; }
+.gross-up-figure { font-size: 1.35rem; font-weight: 700; color: var(--good-text); }
+.gross-up-figure .unit { font-size: 0.9rem; font-weight: 600; color: var(--text-secondary); margin-left: 6px; }
+.gross-up-math { font-size: 0.88rem; color: var(--text-secondary); margin-top: 6px; line-height: 1.5; }
+.gross-up-math b { color: var(--text-primary); }
+.gross-up-math .nowrap { white-space: nowrap; } /* keeps the formula on one line */
+.gross-up-note { font-size: 0.78rem; color: var(--text-muted); margin-top: 8px; line-height: 1.45; }
+
 /* ---- Footer ----------------------------------------------------------------- */
 footer.disclaimer {
   font-size: 0.8rem;
@@ -931,9 +949,13 @@ footer.disclaimer .pmr-link { display: inline-block; margin-top: 4px; font-weigh
         <span class="hint" id="fiduciaryHint"></span>
       </span>
     </label>
+    <div id="grossUpRow">
+      <button class="toggle-btn" id="grossUpBtn" type="button" aria-pressed="false" aria-controls="grossUpResult">Gross up</button>
+    </div>
     <div id="feeRatesPanel">
       <div class="fee-rates-fields" id="feeRatesFieldsWrap"></div>
     </div>
+    <div id="grossUpResult" aria-live="polite"></div>
     </div>
   </section>
 
@@ -1233,7 +1255,8 @@ const state = {
   relinquishedDebt: 0,                         // $ of debt on the property sold -- a default field, not gated by Advanced (see computeBoot)
   fiduciary: true, // no upfront/placement fees while true
   upfrontFeeRate: DEFAULT_UPFRONT_FEE_PCT,     // editable, only matters while !fiduciary
-  placementFeeRate: DEFAULT_PLACEMENT_FEE_PCT, // editable, only matters while !fiduciary
+  placementFeeRate: DEFAULT_PLACEMENT_FEE_PCT, // editable; charged while !fiduciary, used as the comparison load by the gross-up
+  grossUp: false,  // "Gross up" readout showing; only offered while fiduciary
   capGainsRate: DEFAULT_CAP_GAINS_RATE_PCT,    // applied to any boot (unallocated proceeds taken as cash)
   ordinaryRate: DEFAULT_ORDINARY_RATE_PCT,     // applied to the non-sheltered part of DST distributions
   // null, NOT 0. A zero cost basis is the maximum-gain assumption -- it claims
@@ -1780,6 +1803,9 @@ const mcToggleEl = document.getElementById("mcToggle");
 const fiduciaryToggleEl = document.getElementById("fiduciaryToggle");
 const fiduciaryHintEl = document.getElementById("fiduciaryHint");
 const fiduciaryIconEl = document.getElementById("fiduciaryIcon");
+const grossUpRowEl = document.getElementById("grossUpRow");
+const grossUpBtnEl = document.getElementById("grossUpBtn");
+const grossUpResultEl = document.getElementById("grossUpResult");
 const bootBannerEl = document.getElementById("bootBanner");
 const bootAmountEl = document.getElementById("bootAmount");
 const bootDebtReliefRowEl = document.getElementById("bootDebtReliefRow");
@@ -1970,6 +1996,7 @@ function renderResults() {
   refreshAfterTaxYields();
   const totalFeePct = state.upfrontFeeRate + state.placementFeeRate;
   const portfolio = computePortfolio(state.dsts, state.fiduciary, totalFeePct);
+  renderGrossUp(portfolio.totalGross);
 
   // Debt paydown only exists for amortizing (zero coupon) DSTs, so its tile and
   // table column are shown only when one is in the portfolio -- otherwise it
@@ -2202,9 +2229,55 @@ function updateFiduciaryHint() {
   // "no conflict of interest" signal, so it has nothing to say in the
   // commission/fee state.
   fiduciaryIconEl.innerHTML = state.fiduciary ? svgIcon("handshake", 18) : "";
-  // The editable fee-rate fields only matter (and only make sense to show)
-  // while acting in a commission/fee capacity.
-  feeRatesPanelEl.classList.toggle("visible", !state.fiduciary);
+  // The editable fee-rate fields matter while acting in a commission/fee
+  // capacity, and also while the fiduciary gross-up is open -- there they're
+  // the comparison load the gross-up is measured against, so they stay
+  // editable and the readout updates live.
+  const showGrossUp = state.fiduciary && state.grossUp;
+  feeRatesPanelEl.classList.toggle("visible", !state.fiduciary || showGrossUp);
+  grossUpRowEl.classList.toggle("visible", state.fiduciary);
+  grossUpBtnEl.setAttribute("aria-pressed", showGrossUp ? "true" : "false");
+  grossUpBtnEl.textContent = showGrossUp ? "\u2713 Gross up" : "Gross up";
+  grossUpResultEl.classList.toggle("visible", showGrossUp);
+}
+
+/* ----------------------------------------------------------------------------
+   FIDUCIARY GROSS-UP
+   With no load, every dollar committed goes to work. The gross-up asks how much
+   a loaded investor would have to commit to put that same amount to work:
+       grossedUp = committed / (1 - totalFeePct/100)
+   e.g. $1,000,000 / (1 - 0.065) = $1,069,519 at the default 5% + 1.5% load.
+   The difference is the additional principal the waived load is equivalent to.
+   It's deliberately larger than the load itself on `committed` ($65,000 in that
+   example), because a load is charged on the larger gross amount -- the note
+   under the figure says so, since that gap is the first question a careful
+   reader asks. Pure arithmetic on the fee inputs: no return assumption enters.
+   ---------------------------------------------------------------------------- */
+function renderGrossUp(committed) {
+  if (!(state.fiduciary && state.grossUp)) return;
+  const upfront = state.upfrontFeeRate, placement = state.placementFeeRate;
+  const totalFeePct = upfront + placement;
+  const loadText = `${trimNum(totalFeePct)}% load (${trimNum(upfront)}% upfront + ${trimNum(placement)}% placement)`;
+  if (committed <= 0) {
+    grossUpResultEl.innerHTML = `<p class="gross-up-math">Add a DST to see the gross-up.</p>`;
+    return;
+  }
+  // A 100%+ load would consume every dollar, so no gross amount puts any
+  // principal to work -- the formula divides by zero (or goes negative).
+  if (totalFeePct >= 100) {
+    grossUpResultEl.innerHTML = `<p class="gross-up-math">At a ${esc(loadText)}, no amount of principal would be put to work, so there is no gross-up to show. Lower the fee rates above.</p>`;
+    return;
+  }
+  const feeRate = totalFeePct / 100;
+  const grossedUp = committed / (1 - feeRate);
+  const additional = grossedUp - committed;
+  grossUpResultEl.innerHTML = `
+    <div class="gross-up-figure">+${fmtUSD.format(additional)}<span class="unit">equivalent additional principal</span></div>
+    <p class="gross-up-math">With no upfront or placement fee, all <b>${fmtUSD.format(committed)}</b> committed to DSTs is put to work.
+      To put that same amount to work under a ${esc(loadText)}, an investor would need to commit
+      <b>${fmtUSD.format(grossedUp)}</b>: <span class="nowrap">${fmtUSD.format(committed)} &divide; (1 &minus; ${trimNum(feeRate)})</span>.</p>
+    <p class="gross-up-note">The gross-up exceeds the ${fmtUSD.format(committed * feeRate)} load on ${fmtUSD.format(committed)} because a load is charged on the larger gross amount.
+      Illustrative arithmetic based on the fee rates entered above; actual offering fees vary. Not a projection or guarantee of returns.</p>`;
 }
 
 // Hooks SCALAR_FIELDS entries can name in their `onChange`. Looked up by
@@ -2247,6 +2320,7 @@ function encodeState() {
     parts.push(`${f.urlKey}=${trimNum(v)}`);
   }
   parts.push(`fid=${state.fiduciary ? 1 : 0}`);
+  if (state.grossUp) parts.push("gu=1");
   parts.push(`adv=${state.advancedTax ? 1 : 0}`);
   if (mcToggleEl.checked) parts.push("mc=1");
   if (state.dsts.length) {
@@ -2333,6 +2407,7 @@ function applyHashState(rawHash) {
     touched = true;
   }
   if (params.has("fid")) { state.fiduciary = params.get("fid") === "1"; touched = true; }
+  if (params.has("gu")) { state.grossUp = params.get("gu") === "1"; touched = true; }
   if (params.has("adv")) { state.advancedTax = params.get("adv") === "1"; touched = true; }
   if (params.has("l") || params.has("d")) {
     const parsed = params.has("l")
@@ -2448,6 +2523,13 @@ mcToggleEl.addEventListener("change", () => {
 
 fiduciaryToggleEl.addEventListener("change", () => {
   state.fiduciary = fiduciaryToggleEl.checked;
+  updateFiduciaryHint();
+  renderResults();
+  scheduleUrlSync();
+});
+
+grossUpBtnEl.addEventListener("click", () => {
+  state.grossUp = !state.grossUp;
   updateFiduciaryHint();
   renderResults();
   scheduleUrlSync();
