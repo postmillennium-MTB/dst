@@ -17,6 +17,23 @@ It is an educational illustration of how DST return mechanics work. It is not in
 
 Double-click `index.html`. There is no build step, no install and no external dependency. On the PMR site it runs inside an iframe.
 
+## Views
+
+A tab bar at the top switches between three views. The first two are built for filming: one idea per screen, large type, and layouts that hold up in both a 16x9 and a 9x16 frame. Left and right arrow keys (or a presentation clicker) step through either one.
+
+**1031 paths.** Three illustrated structures, one at a time or all three together:
+1. *Traditional 1031*: a rental house exchanged into another rental house. Landlord before, landlord after.
+2. *1031 into a DST*: the house exchanged into a fractional share of a sponsor-managed brick apartment building (the investor's share is highlighted). Passive investor after, often for 5 to 10 years.
+3. *DST, then a 721 into an UPREIT*: the DST, often about two years later, contributed to a REIT's operating partnership. The investor ends up holding operating partnership (OP) units, not REIT shares; converting them to shares or cash later is taxable, and further 1031 exchanges are generally no longer available.
+
+Each path shows who manages, how much control the investor keeps, what comes next, and one caveat that keeps the simple picture accurate.
+
+**Walkthrough.** Five steps, each with one headline number and the math behind "Show the work": the sale, the tax if sold outright (depreciation recapture first, then capital gain), the exchange instead (with the replacement value and debt needed to defer it all), illustrative income at the same assumed rate on both sides, and a side-by-side bar comparison. Three one-click hypothetical scenarios fill every input so nothing is typed on camera; "Edit the numbers" opens the fields. The walkthrough has its own inputs (it needs the sale price and mortgage, which the calculator does not ask for) but shares the calculator's recapture-then-capital-gains tax function.
+
+**Full calculator.** Everything below.
+
+Links made before the views existed carry calculator settings and no `v=` key, so they still open on the calculator. A link with no settings opens on 1031 paths.
+
 ## Interface
 
 **Exchange proceeds**
@@ -104,6 +121,7 @@ That shows the code computes what this README describes. It does not show the mo
 
 - Links made before the LTV change carry the DST list under `d` with debt-on-equity leverage. They are converted on load (LTV = DE / (1 + DE)). An old zero coupon record lands below today's 60% LTV floor and is clamped up to it. New links use `l`; the `d` key must never be reused.
 - Yield and sheltered schedules ride in the `ys` and `sh` keys. A record is left empty when it holds the default.
+- View keys: `v` (view), `p` (path), `wp` (walkthrough preset) or `w` + `wn` (edited walkthrough values, in `WALKTHROUGH_FIELDS` order, and NIIT), `ws` (step). Append new walkthrough fields; never reorder them.
 
 ## What this tool does not do
 
@@ -124,6 +142,7 @@ Start a new chat with the current `index.html` and ask for the change, following
 
 - To add a property category, add one line to `CATEGORY_DEFAULTS` and one `--cat-*` CSS color.
 - To add a portfolio-wide input, add one line to `SCALAR_FIELDS`.
+- To add a 1031 path, a walkthrough scenario or a view, add one entry to `EXCHANGE_PATHS`, `WALKTHROUGH_PRESETS` or `VIEWS`.
 
 Never change a category `code` or a URL key once shipped, because that breaks every shared link. Any new default figure must be labeled illustrative or cited.
 
