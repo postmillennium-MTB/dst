@@ -16,6 +16,7 @@
     · TAX ASSUMPTIONS ............ cap gains, state tax, NIIT, advanced recapture
     · DST CARDS .................. per-DST card grid, bell curve holder
     · RESULTS .................... stat tiles, gain-mix donut, breakdown table
+    · 721 UPREIT ................. optional OP-unit projection panel (computeUpreit / renderUpreit)
     · FIDUCIARY SWITCH ........... the toggle, its fee-rate fields, the gross-up button
     · FOOTER ..................... disclaimer, citations, PMR link
 
@@ -147,6 +148,11 @@
   --chart-cashflow:     var(--accent);
   --chart-appreciation: #c9720f;
   --chart-paydown:      var(--cat-zerocoupon);
+  /* 721 UPREIT distribution bars: after-tax taxable income, return of
+     capital (sheltered), and the tax itself (also hatched, never color alone). */
+  --upreit-income: var(--accent);
+  --upreit-roc:    #1baf7a;
+  --upreit-tax:    #c2413a;
 
   /* Illustration palette for the "1031 paths" view (houses, the DST building,
      the UPREIT portfolio). Each solid is drawn with three faces -- top, lit
@@ -540,6 +546,24 @@ button:focus-visible,
 /* No shelter can move it (0% yield, or a 0% / 100% tax rate): shown, not editable. */
 .yield-table td.after-tax-yield input:disabled { background: transparent; border-color: transparent; color: var(--text-primary); padding-left: 0; }
 .dist-tax-row { margin-bottom: 14px; max-width: 260px; }
+
+/* ---- 721 UPREIT ------------------------------------------------------------
+   Optional panel: the DST portfolio contributed to a REIT's operating
+   partnership in year N, then a 10-year projection of the OP units. */
+#upreitBody { display: none; margin-top: 14px; }
+#upreitBody.visible { display: block; }
+.upreit-fields { display: flex; flex-wrap: wrap; gap: 14px 20px; align-items: flex-end; margin-bottom: 8px; }
+.upreit-fields .field { max-width: 210px; flex: 1 1 170px; }
+/* Six tiles: three per row on a desktop card rather than five-and-an-orphan. */
+#upreitStats { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.upreit-rate { font-size: 0.85rem; color: var(--text-secondary); margin: 10px 0 18px; line-height: 1.5; }
+.upreit-chart { margin: 4px 0 6px; }
+.upreit-chart svg { width: 100%; height: auto; display: block; }
+.upreit-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 14px; }
+.upreit-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.upreit-years summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--accent); padding: 6px 0; }
+.upreit-years summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.upreit-note { font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5; margin-top: 12px; max-width: 80ch; }
 
 /* ---- Below-minimum DST allocation warning ---------------------------------- */
 .min-warning { font-size: 0.78rem; color: var(--warning-text); margin-top: 4px; }
@@ -1071,6 +1095,51 @@ body:not([data-view="calculator"]) header p.subtitle { display: none; }
   .wt-step { grid-template-columns: 1.15fr 1fr; gap: 32px; }
 }
 
+/* ---- Results toolbar + print button --------------------------------------- */
+.results-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.results-toolbar .hint { margin-bottom: 16px; }
+button.icon-btn {
+  flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; min-height: 40px; padding: 0;
+  background: var(--surface-inset); color: var(--text-secondary);
+}
+button.icon-btn:hover { color: var(--text-primary); }
+.is-touch button.icon-btn { width: 44px; height: 44px; }
+
+/* ==========================================================================
+   PRINT (Projected results only)
+   printResults() adds body.print-results, then calls window.print(). Only the
+   print summary, the Projected results panel, the 721 UPREIT panel (when on)
+   and the disclosures print; everything interactive is hidden.
+   ========================================================================== */
+.print-only { display: none; }
+@media print {
+  @page { margin: 0.6in; }
+  html, body { background: #fff !important; }
+  body { padding: 0; }
+  .texture, .view-tabs, #view-paths, #view-walkthrough { display: none !important; }
+  body.print-results #view-calculator > section { display: none; }
+  body.print-results #view-calculator > section.print-keep { display: block; }
+  body.print-results #view-calculator { display: flex !important; }
+  body.print-results .print-only { display: block; }
+  body.print-results header p.subtitle { display: none; }
+  .panel { border: none; padding: 0; break-inside: auto; }
+  .panel.collapsed .panel-body { display: block; }
+  .panel-head .collapse-btn, button, .advanced-toggle, .share-row, .upreit-fields, .upreit-years summary,
+  #mcPanel:not(.visible), .dist-tax-row, #costBasisFieldWrap { display: none !important; }
+  .upreit-years > div { display: block; }
+  .stat-tile, tr, .print-block { break-inside: avoid; }
+  .table-scroll { overflow: visible; }
+  footer.disclaimer { text-align: left; }
+  a { color: inherit; }
+}
+.print-summary h2 { font-size: 1.05rem; margin: 0 0 6px; }
+.print-summary .meta { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px; }
+.print-summary table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-bottom: 12px; }
+.print-summary th, .print-summary td { text-align: left; padding: 3px 8px 3px 0; border-bottom: 1px solid var(--gridline); }
+.print-summary .print-disclosure { font-size: 0.8rem; border: 1px solid var(--text-primary); padding: 8px 10px; margin: 8px 0 14px; line-height: 1.45; }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
@@ -1089,6 +1158,11 @@ body:not([data-view="calculator"]) header p.subtitle { display: none; }
       the pieces add up.
     </p>
   </header>
+
+  <!-- PRINT-ONLY: filled by buildPrintSummary() just before printing, hidden on
+       screen. A printout may be handed to someone who never sees the page, so
+       it carries every input and the disclosures with it. -->
+  <section class="print-only print-summary" id="printSummary" aria-hidden="true"></section>
 
   <!-- Shared SVG defs (brick textures) for the illustrations. Lives in its own
        zero-size, ALWAYS-RENDERED svg: patterns inside a display:none view's svg
@@ -1208,10 +1282,15 @@ body:not([data-view="calculator"]) header p.subtitle { display: none; }
       <span class="collapse-btn" aria-hidden="true"></span>
     </div>
     <div class="panel-body">
-    <p class="hint">Rates applied to boot, to the "if you'd sold instead" comparison, and to the taxable part of DST distributions. State tax and the NIIT are added on top of each federal rate.</p>
+    <p class="hint">Rates applied to boot, to the "if you'd sold instead" comparison, and to the taxable part of DST and REIT distributions (the ordinary income rate). State tax and the NIIT are added on top of each federal rate.</p>
     <div class="tax-row">
       <div id="capGainsFieldWrap" class="field-mount"></div>
       <div id="stateTaxFieldWrap" class="field-mount"></div>
+      <!-- Ordinary income rate: applied to the part of DST distributions that
+           isn't tax-sheltered, and to taxable REIT dividends in the 721 UPREIT
+           panel. Feeds the "After-tax cash flow" tile and each card's
+           after-tax yield column. -->
+      <div id="ordIncomeFieldWrap" class="field-mount"></div>
       <label class="advanced-toggle">
         <input type="checkbox" id="niitToggle">
         3.8% net investment income tax
@@ -1273,20 +1352,16 @@ body:not([data-view="calculator"]) header p.subtitle { display: none; }
   </section>
 
   <!-- ======================= RESULTS ======================= -->
-  <section class="panel">
+  <section class="panel print-keep">
     <div class="panel-head" data-panel-toggle tabindex="0" role="button" aria-expanded="true">
       <h2>Projected results</h2>
       <span class="collapse-btn" aria-hidden="true"></span>
     </div>
     <div class="panel-body">
-    <p class="hint">Based on each DST's year-by-year yield, loan-to-value, appreciation rate, and assumed holding period.</p>
-
-    <!-- Rate applied to the part of each year's distributions that ISN'T
-         tax-sheltered (see each card's year-by-year schedule). Feeds the
-         "After-tax cash flow" tile and each card's after-tax yield column;
-         every other figure here is pre-tax. -->
-    <div class="dist-tax-row">
-      <div id="ordIncomeFieldWrap" class="field-mount"></div>
+    <div class="results-toolbar">
+      <p class="hint">Based on each DST's year-by-year yield, loan-to-value, appreciation rate, and assumed holding period.</p>
+      <!-- Icon only, by request; the accessible name and tooltip say what it does. -->
+      <button type="button" class="icon-btn" id="printBtn" aria-label="Print or save the projected results as a PDF" title="Print or save as PDF"></button>
     </div>
 
     <div class="stat-grid" id="statGrid"></div>
@@ -1349,6 +1424,62 @@ body:not([data-view="calculator"]) header p.subtitle { display: none; }
     <div class="share-row">
       <button class="ghost" id="copyLinkBtn" type="button">Copy link to this scenario</button>
       <span class="share-hint" id="copyLinkHint">Every input on this page is stored in the link, so whoever opens it sees exactly this setup.</span>
+    </div>
+    </div>
+  </section>
+
+  <!-- ======================= 721 UPREIT ======================= -->
+  <!-- Optional: contribute the DST portfolio to a REIT's operating partnership
+       (a Section 721 exchange) and project the OP units for 10 years. Its
+       inputs are SCALAR_FIELDS entries mounted in #upreitFieldsWrap. -->
+  <section class="panel print-keep" id="upreitPanel">
+    <div class="panel-head" data-panel-toggle tabindex="0" role="button" aria-expanded="true">
+      <h2>721 UPREIT</h2>
+      <span class="collapse-btn" aria-hidden="true"></span>
+    </div>
+    <div class="panel-body">
+    <label class="advanced-toggle">
+      <input type="checkbox" id="upreitToggle">
+      Model a 721 exchange into an UPREIT
+    </label>
+    <div id="upreitBody">
+      <p class="hint">In the year you choose, the DST portfolio is contributed to a REIT's operating partnership in exchange for OP units, tax deferred. The units are then projected for 10 years. Distributions are paid out, not reinvested.</p>
+      <div class="upreit-fields">
+        <!-- Built from SCALAR_FIELDS. The 199A checkbox sits OUTSIDE this mount:
+             buildScalarFields replaces the mount's contents. -->
+        <div id="upreitFieldsWrap" class="field-mount"></div>
+        <label class="advanced-toggle">
+          <input type="checkbox" id="qbiToggle" checked>
+          20% Section 199A deduction
+        </label>
+      </div>
+      <p class="upreit-rate" id="upreitRate"></p>
+      <div class="stat-grid" id="upreitStats"></div>
+      <div class="upreit-chart" id="upreitChart"></div>
+      <div class="upreit-legend">
+        <span><i style="background:var(--upreit-income)"></i>Taxable income, after tax</span>
+        <span><i style="background:var(--upreit-roc)"></i>Return of capital (sheltered)</span>
+        <span><i style="background:repeating-linear-gradient(135deg,var(--upreit-tax) 0 3px,#8f2f29 3px 6px)"></i>Tax</span>
+      </div>
+      <details class="upreit-years">
+        <summary>Year by year</summary>
+        <div class="table-scroll">
+          <table class="breakdown">
+            <thead><tr><th>Year</th><th>Unit value</th><th>Distribution</th><th>Return of capital</th><th>Taxable</th><th>Tax</th><th>After tax</th><th>Remaining basis</th></tr></thead>
+            <tbody id="upreitBody10"></tbody>
+          </table>
+        </div>
+      </details>
+      <p class="upreit-note">
+        <strong>How the tax works here.</strong> Return of capital isn't taxed when paid; it lowers your basis instead,
+        so it defers tax rather than avoiding it. Once basis reaches zero, further return of capital is taxed as capital gain.
+        The taxable part is taxed at the ordinary income rate, reduced by the 20% Section 199A deduction on qualified REIT
+        dividends when that box is checked (state tax and the NIIT are added in full). Converting OP units to REIT shares,
+        or redeeming them for cash, is a taxable event: the embedded gain shown is what would be recognized then. The model
+        uses your cost basis from "If you'd sold instead," less the DST's sheltered income, and ignores depreciation
+        recapture, capital-gain dividends, and fees at the 721 and in the REIT. The 721 is typically at the sponsor's
+        discretion; the yield and growth figures are illustrative assumptions, not any REIT's.
+      </p>
     </div>
     </div>
   </section>
@@ -1458,6 +1589,7 @@ const ICON_PATHS = {
   route:         `<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>`,
   listOrdered:   `<path d="M10 12h11"/><path d="M10 18h11"/><path d="M10 6h11"/><path d="M4 10h2"/><path d="M4 6h1v4"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/>`,
   calculator:    `<rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/>`,
+  printer:       `<path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/>`,
   landmark:      `<path d="M10 18v-7"/><path d="M11.119 2.205a2 2 0 0 1 1.762 0l7.84 3.846A.5.5 0 0 1 20.5 7h-17a.5.5 0 0 1-.22-.949z"/><path d="M14 18v-7"/><path d="M18 18v-7"/><path d="M3 22h18"/><path d="M6 18v-7"/>`,
 };
 
@@ -1584,7 +1716,7 @@ const DEFAULT_DEP_RECAPTURE_RATE_PCT = 25;
 // Default rate on the NON-sheltered part of DST distributions, which is
 // ordinary income. 37% is the top federal bracket; like the rates above it
 // is federal only (the add-ons below stack on top). Just the starting value
-// of the editable "Tax rate on distributions" field.
+// of the editable "Ordinary income rate" field.
 const DEFAULT_ORDINARY_RATE_PCT = 37;
 
 // Tax add-ons, from the Tax assumptions card. Both are simply ADDED to every
@@ -1595,6 +1727,21 @@ const DEFAULT_ORDINARY_RATE_PCT = 37;
 // defaults off because whether it applies depends on income.
 const DEFAULT_STATE_TAX_PCT = 0;
 const NIIT_RATE_PCT = 3.8;
+
+// 721 UPREIT panel. Starting values for its editable fields -- illustrative
+// round numbers, not the terms of any REIT. Shelter starts at 0 for the same
+// reason as DEFAULT_SHELTERED_PCT: the real figure comes from the specific
+// REIT, and a flattering default would be the tool inventing its own input.
+const DEFAULT_UPREIT_YEAR = 2;          // year of the DST hold in which the 721 happens
+const DEFAULT_UPREIT_YIELD_PCT = 4.5;   // annual distribution, % of unit value
+const DEFAULT_UPREIT_GROWTH_PCT = 3;    // annual change in unit value
+const DEFAULT_UPREIT_SHELTERED_PCT = 0; // share of distributions that is return of capital
+const UPREIT_PROJECTION_YEARS = 10;     // length of the OP-unit projection
+// Section 199A: individuals may deduct 20% of qualified REIT dividends, so the
+// federal ordinary rate on them is effectively 80% of the bracket rate. Made
+// permanent by the 2025 tax law (P.L. 119-21). Applied to the federal rate
+// only; state tax and the NIIT are added on the full amount.
+const SECTION_199A_PCT = 20;
 
 // Default share of each year's distribution sheltered from current tax
 // (by depreciation passed through to the investor). 0, not a typical-looking
@@ -1650,7 +1797,11 @@ const SCALAR_FIELDS = [
   { id: "depRecaptureRate",  stateKey: "depRecaptureRate",        urlKey: "dr", label: "Recapture rate",                min: 0, max: 100, step: 1,   suffix: "%", mount: "advTaxFieldsWrap" },
   { id: "upfrontFeeRate",    stateKey: "upfrontFeeRate",          urlKey: "uf", label: "Upfront fee",                   min: 0, max: 100, step: 0.25, suffix: "%", mount: "feeRatesFieldsWrap", onChange: "updateFiduciaryHint" },
   { id: "placementFeeRate",  stateKey: "placementFeeRate",        urlKey: "pf", label: "Placement fee",                 min: 0, max: 100, step: 0.25, suffix: "%", mount: "feeRatesFieldsWrap", onChange: "updateFiduciaryHint" },
-  { id: "ordinaryRate",      stateKey: "ordinaryRate",            urlKey: "or", label: "Tax rate on distributions",     min: 0, max: 100, step: 1,   suffix: "%", mount: "ordIncomeFieldWrap" },
+  { id: "ordinaryRate",      stateKey: "ordinaryRate",            urlKey: "or", label: "Ordinary income rate",          min: 0, max: 100, step: 1,   suffix: "%", mount: "ordIncomeFieldWrap" },
+  { id: "upreitYear",        stateKey: "upreitYear",              urlKey: "uyr", label: "721 in year",                  min: 1, max: 10,  step: 1,    mount: "upreitFieldsWrap" },
+  { id: "upreitYield",       stateKey: "upreitYield",             urlKey: "uyd", label: "REIT distribution yield",      min: 0, max: 15,  step: 0.25, suffix: "%", mount: "upreitFieldsWrap" },
+  { id: "upreitGrowth",      stateKey: "upreitGrowth",            urlKey: "ugr", label: "Unit value growth",            min: -10, max: 15, step: 0.25, suffix: "%", mount: "upreitFieldsWrap" },
+  { id: "upreitSheltered",   stateKey: "upreitSheltered",         urlKey: "ush", label: "Return of capital share",      min: 0, max: 100, step: 1,    suffix: "%", mount: "upreitFieldsWrap" },
   { id: "costBasis",         stateKey: "costBasis",               urlKey: "cb", label: "Cost basis",                    min: 0, max: MAX_DOLLAR_FIELD, step: 10000, prefix: "$", mount: "costBasisFieldWrap", blankable: true },
 ];
 
@@ -1669,6 +1820,11 @@ const PMR_ORIGINS = [
 // wrapper's URL and the copy button will hand out the site link instead, with
 // the scenario hash appended.
 const PMR_WRAPPER_URL = null;
+
+// Printed at the top of every "Projected results" printout, ahead of the
+// footer disclaimer. Plain and prominent because a printout travels without
+// the page around it. Asset-class language only (project compliance rule).
+const PRINT_DISCLOSURE = "Hypothetical illustration for educational purposes only. Figures are based on the assumptions listed below, which are illustrative and do not describe any specific DST, REIT, sponsor or offering. This is not a projection or guarantee of future results, and not investment, tax or legal advice. Actual results will differ. DST and REIT investments involve risk, including illiquidity and possible loss of principal. Consult qualified tax and legal advisors and read the offering documents before investing.";
 
 /* ==== VIEWS — the top-level tabs. TO ADD A VIEW: add ONE entry here plus a
    matching <div class="view" id="view-KEY"> in the markup. The tab bar, the
@@ -1744,7 +1900,7 @@ const EXCHANGE_PATHS = [
     facts: [
       { k: "Who manages",  v: "A professional sponsor" },
       { k: "Your control", v: "None over day-to-day or sale decisions" },
-      { k: "What's next",  v: "When the property sells: another 1031, or pay the deferred tax" },
+      { k: "What's next",  v: "When the DST property sells: investors can do a traditional 1031, another 1031 DST, a 1031 DST 721 or pay the deferred tax." },
     ],
     fine: "A DST interest is an undivided fractional interest in the whole property, not ownership of particular units. The sponsor decides when to sell, so the hold period is an estimate, not a promise. DST interests are generally illiquid and usually limited to accredited investors.",
   },
@@ -1870,6 +2026,12 @@ const state = {
   // entered anything at all. Until a basis is actually supplied, the whole
   // comparison stays hidden (see renderTheoreticalTax).
   costBasis: null,
+  upreit: false,                               // 721 UPREIT panel on
+  qbi199a: true,                               // apply the 20% Section 199A deduction to taxable REIT dividends
+  upreitYear: DEFAULT_UPREIT_YEAR,
+  upreitYield: DEFAULT_UPREIT_YIELD_PCT,
+  upreitGrowth: DEFAULT_UPREIT_GROWTH_PCT,
+  upreitSheltered: DEFAULT_UPREIT_SHELTERED_PCT,
   advancedTax: false,                          // gates the depreciation-recapture tax split below
   accumulatedDepreciation: 0,                  // $ of depreciation taken on the relinquished property
   depRecaptureRate: DEFAULT_DEP_RECAPTURE_RATE_PCT,
@@ -2169,6 +2331,198 @@ function computeTheoreticalTax(totalProceeds, costBasis, opts) {
   return { realizedGain, recaptureTax, capGainTax, tax };
 }
 
+/* ----------------------------------------------------------------------------
+   721 UPREIT
+   The DST portfolio is contributed to a REIT operating partnership in year
+   `upreitYear` of the hold. The investor's OP units start at the portfolio's
+   equity value then (property value less debt: equity + appreciation + debt
+   paid down, from computeDst run to that year) -- distributions already paid
+   aren't part of what's contributed. Then UPREIT_PROJECTION_YEARS of:
+     distribution = unit value at start of year * yield
+     return of capital (ROC) = distribution * sheltered %  -> lowers basis;
+       any ROC beyond remaining basis is taxed as capital gain
+     the rest is a taxable dividend at the ordinary rate (x 0.8 federal with
+       Section 199A), plus state tax and NIIT
+   Basis: the cost basis typed in "If you'd sold instead", less the sheltered
+   DST income received before the 721 (which also lowered basis). Without a
+   cost basis the basis-dependent figures are left blank, not guessed.
+   Pure function of `state`, like the other tax views.
+   ---------------------------------------------------------------------------- */
+function upreitOrdinaryRatePct() {
+  const fed = state.ordinaryRate * (state.qbi199a ? 1 - SECTION_199A_PCT / 100 : 1);
+  return withAddOns(fed);
+}
+
+function computeUpreit() {
+  const totalFeePct = state.upfrontFeeRate + state.placementFeeRate;
+  const Y = state.upreitYear;
+  const atContribution = state.dsts.map(d => computeDst({ ...d, years: Y }, state.fiduciary, totalFeePct, state.grossUp));
+  const startValue = atContribution.reduce((s, r) => s + r.equity + r.appreciationGain + r.debtPaydown, 0);
+  const dstSheltered = atContribution.reduce((s, r) => s + r.shelteredIncome, 0);
+  let basis = state.costBasis === null ? null : Math.max(state.costBasis - dstSheltered, 0);
+  const startBasis = basis;
+
+  const ordRate = upreitOrdinaryRatePct() / 100;
+  const cgRate = withAddOns(state.capGainsRate) / 100;
+  const g = state.upreitGrowth / 100, y = state.upreitYield / 100, sh = state.upreitSheltered / 100;
+
+  const years = [];
+  let totDist = 0, totRoc = 0, totTaxable = 0, totTax = 0;
+  for (let t = 1; t <= UPREIT_PROJECTION_YEARS; t++) {
+    const valueStart = startValue * Math.pow(1 + g, t - 1);
+    const dist = valueStart * y;
+    const roc = dist * sh;
+    const taxable = dist - roc;
+    let excessRoc = 0;
+    if (basis !== null) {
+      const applied = Math.min(roc, basis);
+      excessRoc = roc - applied;
+      basis -= applied;
+    }
+    const tax = taxable * ordRate + excessRoc * cgRate;
+    years.push({ t, value: startValue * Math.pow(1 + g, t), dist, roc, taxable, excessRoc, tax, afterTax: dist - tax, basis });
+    totDist += dist; totRoc += roc; totTaxable += taxable; totTax += tax;
+  }
+  const endValue = years[years.length - 1].value;
+  const embeddedGain = basis === null ? null : Math.max(endValue - basis, 0);
+  return {
+    year: Y, startValue, startBasis, dstSheltered, endValue, endBasis: basis,
+    totDist, totRoc, totTaxable, totTax, totAfterTax: totDist - totTax,
+    embeddedGain, taxIfConverted: embeddedGain === null ? null : embeddedGain * cgRate,
+    ordRatePct: ordRate * 100, years,
+  };
+}
+
+// Ten stacked bars, one per year: after-tax taxable income, return of
+// capital, then tax on top. Built in a fixed viewBox and scaled to fit.
+const UPREIT_CHART_W = 640, UPREIT_CHART_H = 170, UPREIT_CHART_PAD_B = 22, UPREIT_BAR_GAP = 0.32;
+function upreitChartSVG(years) {
+  const max = Math.max(...years.map(r => r.dist), 1);
+  const plotH = UPREIT_CHART_H - UPREIT_CHART_PAD_B - 6;
+  const slot = UPREIT_CHART_W / years.length;
+  const bw = slot * (1 - UPREIT_BAR_GAP);
+  const bars = years.map((r, i) => {
+    const x = i * slot + (slot - bw) / 2;
+    let yTop = UPREIT_CHART_H - UPREIT_CHART_PAD_B;
+    const seg = (v, fill) => {
+      const h = plotH * v / max;
+      yTop -= h;
+      return h > 0 ? `<rect x="${x.toFixed(1)}" y="${yTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" style="fill:${fill}"/>` : "";
+    };
+    // Segments sum to the distribution: what's left after all tax, split by
+    // source, plus the tax. Tax on excess ROC comes out of the ROC slice.
+    const cgTaxOnRoc = r.excessRoc * (withAddOns(state.capGainsRate) / 100);
+    const ordTax = r.tax - cgTaxOnRoc;
+    return seg(r.taxable - ordTax, "var(--upreit-income)") + seg(r.roc - cgTaxOnRoc, "var(--upreit-roc)") + seg(r.tax, "url(#hatchTax)")
+      + `<text x="${(x + bw / 2).toFixed(1)}" y="${UPREIT_CHART_H - 6}" text-anchor="middle" font-size="12" style="fill:var(--text-muted)">${r.t}</text>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${UPREIT_CHART_W} ${UPREIT_CHART_H}" role="img" aria-label="Annual REIT distributions for years 1 to ${years.length} after the 721, split into after-tax income, return of capital, and tax">
+    <defs><pattern id="hatchTax" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--upreit-tax)"/><rect width="3" height="6" style="fill:#8f2f29"/></pattern></defs>
+    <line x1="0" x2="${UPREIT_CHART_W}" y1="${UPREIT_CHART_H - UPREIT_CHART_PAD_B}" y2="${UPREIT_CHART_H - UPREIT_CHART_PAD_B}" style="stroke:var(--axis)" stroke-width="1"/>
+    ${bars}</svg>`;
+}
+
+function renderUpreit() {
+  upreitBodyEl.classList.toggle("visible", state.upreit);
+  if (!state.upreit) return;
+  if (state.dsts.length === 0) {
+    upreitStatsEl.innerHTML = `<p class="hint">Add a DST to model a 721.</p>`;
+    upreitChartEl.innerHTML = ""; upreitBody10El.innerHTML = ""; upreitRateEl.textContent = "";
+    return;
+  }
+  const u = computeUpreit();
+  const usd = n => fmtUSD.format(n);
+  const fedPart = state.qbi199a
+    ? `${trimNum(state.ordinaryRate)}% &times; ${100 - SECTION_199A_PCT}% (Section 199A)`
+    : `${trimNum(state.ordinaryRate)}%`;
+  const addOn = taxAddOnPct();
+  upreitRateEl.innerHTML = `Tax on the taxable part of REIT distributions: ${fedPart}${addOn > 0 ? ` + ${trimNum(addOn)}% state/NIIT` : ""} = <strong>${trimNum(Math.round(u.ordRatePct * 100) / 100)}%</strong>.`;
+
+  const tiles = [
+    { label: `OP units at the 721 (year ${u.year})`, value: usd(u.startValue), sub: "portfolio equity value, tax deferred" },
+    { label: `Unit value after ${UPREIT_PROJECTION_YEARS} yrs`, value: usd(u.endValue), sub: `at ${trimNum(state.upreitGrowth)}%/yr` },
+    { label: `Distributions, ${UPREIT_PROJECTION_YEARS} yrs`, value: usd(u.totDist), sub: `${usd(u.totRoc)} return of capital` },
+    { label: "Tax on distributions", value: usd(u.totTax), sub: `on ${usd(u.totTaxable)} taxable` },
+    { label: "After-tax income", value: usd(u.totAfterTax), good: true, sub: `${usd(u.totAfterTax / UPREIT_PROJECTION_YEARS / 12)}/mo average` },
+    u.embeddedGain === null
+      ? { label: "Embedded gain at conversion", value: "&mdash;", sub: "enter a cost basis under If you'd sold instead" }
+      : { label: `Embedded gain, year ${UPREIT_PROJECTION_YEARS}`, value: usd(u.embeddedGain), sub: `~${usd(u.taxIfConverted)} tax if converted and sold` },
+  ];
+  upreitStatsEl.innerHTML = tiles.map(t => `
+    <div class="stat-tile">
+      <div class="label">${esc(t.label)}</div>
+      <div class="value${t.good ? " good" : ""}">${t.value}</div>
+      ${t.sub ? `<div class="sub">${esc(t.sub)}</div>` : ""}
+    </div>`).join("");
+
+  upreitChartEl.innerHTML = upreitChartSVG(u.years);
+  upreitBody10El.innerHTML = u.years.map(r => `
+    <tr>
+      <td>${r.t}</td><td>${usd(r.value)}</td><td>${usd(r.dist)}</td><td>${usd(r.roc)}</td>
+      <td>${usd(r.taxable)}</td><td>${usd(r.tax)}</td><td>${usd(r.afterTax)}</td>
+      <td>${r.basis === null ? "&mdash;" : usd(r.basis)}</td>
+    </tr>`).join("");
+}
+
+/* ----------------------------------------------------------------------------
+   PRINT
+   Builds the print-only summary (every input, as plain rows) and prints the
+   Projected results. Collapsed panels are expanded by the print stylesheet;
+   the UPREIT panel prints only while its toggle is on.
+   ---------------------------------------------------------------------------- */
+function buildPrintSummary() {
+  const usd = n => fmtUSD.format(n);
+  const pct = n => `${trimNum(n)}%`;
+  const rows = [
+    ["Total 1031 proceeds", usd(state.totalProceeds)],
+    ["Debt on relinquished property", usd(state.relinquishedDebt)],
+    ["Cost basis", state.costBasis === null ? "not entered" : usd(state.costBasis)],
+    ["Capital gains rate (federal)", pct(state.capGainsRate)],
+    ...(state.advancedTax ? [["Recapture rate (federal)", pct(state.depRecaptureRate)], ["Accumulated depreciation", usd(state.accumulatedDepreciation)]] : []),
+    ["Ordinary income rate (federal)", pct(state.ordinaryRate)],
+    ["State tax", pct(state.stateTaxRate)],
+    ["3.8% NIIT", state.niit ? "included" : "not included"],
+    ["Fee structure", state.fiduciary
+      ? `Fiduciary (no upfront/placement fees)${state.grossUp ? ", grossed up" : ""}`
+      : `Commission: ${pct(state.upfrontFeeRate)} upfront + ${pct(state.placementFeeRate)} placement`],
+    ...(state.upreit ? [
+      ["721 UPREIT", `in year ${state.upreitYear}; ${pct(state.upreitYield)} yield, ${pct(state.upreitGrowth)} growth, ${pct(state.upreitSheltered)} return of capital`],
+      ["Section 199A deduction", state.qbi199a ? "applied" : "not applied"],
+    ] : []),
+  ];
+  const dstRows = state.dsts.map(d => {
+    const def = CATEGORY_DEFAULTS[d.category];
+    const flatYield = d.yields.every(v => v === d.yields[0]);
+    const flatShelter = d.sheltered.every(v => v === d.sheltered[0]);
+    return `<tr><td>${esc(def.label)}</td><td>${usd(d.amount)}</td><td>${flatYield ? pct(d.yields[0]) : "varies by year"}</td>
+      <td>${flatShelter ? pct(d.sheltered[0]) : "varies by year"}</td><td>${pct(d.leverage)}</td><td>${pct(d.appreciation)}</td><td>${esc(trimNum(d.years))} yrs</td></tr>`;
+  }).join("");
+  const printed = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  printSummaryEl.innerHTML = `
+    <h2>Projected results: hypothetical scenario</h2>
+    <p class="meta">Prepared ${esc(printed)}</p>
+    <p class="print-disclosure">${esc(PRINT_DISCLOSURE)}</p>
+    <div class="print-block">
+      <h2>Assumptions</h2>
+      <table><tbody>${rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("")}</tbody></table>
+    </div>
+    <div class="print-block">
+      <h2>DST allocations</h2>
+      <table><thead><tr><th>Category</th><th>Allocated</th><th>Yield</th><th>Sheltered</th><th>LTV</th><th>Appreciation</th><th>Hold</th></tr></thead>
+      <tbody>${dstRows || `<tr><td colspan="7">None</td></tr>`}</tbody></table>
+    </div>`;
+}
+
+function printResults() {
+  renderResults();
+  buildPrintSummary();
+  upreitPanelEl.classList.toggle("print-keep", state.upreit);
+  document.body.classList.add("print-results");
+  window.print();
+}
+// afterprint, not a timeout: print() blocks in most browsers but not all.
+window.addEventListener("afterprint", () => document.body.classList.remove("print-results"));
+
 function makeDst(categoryKey) {
   const def = CATEGORY_DEFAULTS[categoryKey];
   const allocated = state.dsts.reduce((sum, d) => sum + d.amount, 0);
@@ -2415,6 +2769,16 @@ function donutSVG(segments, size = 116, strokeWidth = 22) {
    ---------------------------------------------------------------------------- */
 const dstListEl = document.getElementById("dstList");
 const statGridEl = document.getElementById("statGrid");
+const printBtnEl = document.getElementById("printBtn");
+const printSummaryEl = document.getElementById("printSummary");
+const upreitPanelEl = document.getElementById("upreitPanel");
+const upreitToggleEl = document.getElementById("upreitToggle");
+const qbiToggleEl    = document.getElementById("qbiToggle");
+const upreitBodyEl   = document.getElementById("upreitBody");
+const upreitStatsEl  = document.getElementById("upreitStats");
+const upreitChartEl  = document.getElementById("upreitChart");
+const upreitBody10El = document.getElementById("upreitBody10");
+const upreitRateEl   = document.getElementById("upreitRate");
 const breakdownBodyEl = document.getElementById("breakdownBody");
 const breakdownTableEl = breakdownBodyEl.closest("table");
 const allocBannerEl = document.getElementById("allocBanner");
@@ -2479,7 +2843,7 @@ function dstSummaryHTML(dst) {
 }
 
 // After-tax yield for one year of the schedule: only the unsheltered part of
-// the distribution is taxed, at the "Tax rate on distributions" field plus
+// the distribution is taxed, at the "Ordinary income rate" field plus
 // the Tax assumptions add-ons. Pure
 // arithmetic on the year's two inputs -- deliberately ignores the basis
 // reduction that sheltering causes (that tax lands at sale, not this year).
@@ -2587,7 +2951,7 @@ function yieldScheduleHTML(dst) {
             <thead><tr><th>Year</th><th>Yield, %/yr</th><th>Tax-sheltered, %</th><th>Taxable-equiv. yield</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
-          <p class="field-note">Yield is the distribution as a % of net equity. Tax-sheltered is the share of that year's distribution not taxed currently (typically offset by depreciation). After tax = yield &times; (1 &minus; unsheltered share &times; the "Tax rate on distributions" in Projected results, plus any state tax and NIIT from Tax assumptions). Taxable-equivalent = after tax &divide; (1 &minus; that rate): what a fully taxed investment would have to yield to leave you the same cash. You can type a taxable-equivalent yield directly and the tax-sheltered % is solved to match (it can range from the yield itself, at 0% sheltered, up to the 100%-sheltered figure). Sheltered income usually lowers your basis, so more of it is taxed when the property sells; this column doesn't count that later tax.</p>
+          <p class="field-note">Yield is the distribution as a % of net equity. Tax-sheltered is the share of that year's distribution not taxed currently (typically offset by depreciation). After tax = yield &times; (1 &minus; unsheltered share &times; the "Ordinary income rate" in Tax assumptions, plus any state tax and NIIT from Tax assumptions). Taxable-equivalent = after tax &divide; (1 &minus; that rate): what a fully taxed investment would have to yield to leave you the same cash. You can type a taxable-equivalent yield directly and the tax-sheltered % is solved to match (it can range from the yield itself, at 0% sheltered, up to the 100%-sheltered figure). Sheltered income usually lowers your basis, so more of it is taxed when the property sells; this column doesn't count that later tax.</p>
         </details>`;
 }
 
@@ -2754,6 +3118,7 @@ function renderResults() {
   const bootResult = renderBootBanner(portfolio);
   renderGainMix(portfolio);
   renderTheoreticalTax(bootResult);
+  renderUpreit();
 
   // Coalesced, NOT called directly: a slider drag fires `input` 60-100 times a
   // second and each simulation is 4,000 iterations per DST (~19ms at 10 DSTs,
@@ -2774,7 +3139,7 @@ function renderTaxCombined() {
   const parts = [
     `capital gains <strong>${esc(trimNum(withAddOns(state.capGainsRate)))}%</strong>`,
     ...(state.advancedTax ? [`recapture <strong>${esc(trimNum(withAddOns(state.depRecaptureRate)))}%</strong>`] : []),
-    `distributions <strong>${esc(trimNum(withAddOns(state.ordinaryRate)))}%</strong>`,
+    `ordinary income <strong>${esc(trimNum(withAddOns(state.ordinaryRate)))}%</strong>`,
   ];
   taxCombinedEl.innerHTML = `Combined rates (federal + ${esc(trimNum(addOn))}% add-on): ${parts.join(" &middot; ")}`;
 }
@@ -3031,6 +3396,8 @@ function encodeState() {
   if (state.grossUp) parts.push("gu=1");
   if (state.niit) parts.push("ni=1");
   parts.push(`adv=${state.advancedTax ? 1 : 0}`);
+  if (state.upreit) parts.push("up=1");
+  if (!state.qbi199a) parts.push("qb=0");
   if (mcToggleEl.checked) parts.push("mc=1");
   if (state.dsts.length) {
     parts.push("l=" + state.dsts.map(d => [
@@ -3120,6 +3487,8 @@ function applyHashState(rawHash) {
   if (params.has("gu")) { state.grossUp = params.get("gu") === "1"; touched = true; }
   if (params.has("ni")) { state.niit = params.get("ni") === "1"; touched = true; }
   if (params.has("adv")) { state.advancedTax = params.get("adv") === "1"; touched = true; }
+  if (params.has("up")) { state.upreit = params.get("up") === "1"; touched = true; }
+  if (params.has("qb")) { state.qbi199a = params.get("qb") !== "0"; touched = true; }
   if (params.has("l") || params.has("d")) {
     const parsed = params.has("l")
       ? decodeDsts(params.get("l"), false, params.get("ys") || "", params.get("sh") || "")
@@ -3158,6 +3527,8 @@ function syncAllControls() {
   }
   fiduciaryToggleEl.checked = state.fiduciary;
   advTaxToggleEl.checked = state.advancedTax;
+  upreitToggleEl.checked = state.upreit;
+  qbiToggleEl.checked = state.qbi199a;
   niitToggleEl.checked = state.niit;
   advTaxPanelEl.classList.toggle("visible", state.advancedTax);
   updateFiduciaryHint();
@@ -3855,6 +4226,20 @@ expandAllBtnEl.addEventListener("click", () => {
 collapseAllBtnEl.addEventListener("click", () => {
   state.dsts.forEach(d => { d.collapsed = true; });
   renderCardList();
+});
+
+printBtnEl.innerHTML = svgIcon("printer", 20);
+printBtnEl.addEventListener("click", printResults);
+
+upreitToggleEl.addEventListener("change", () => {
+  state.upreit = upreitToggleEl.checked;
+  renderResults();
+  scheduleUrlSync();
+});
+qbiToggleEl.addEventListener("change", () => {
+  state.qbi199a = qbiToggleEl.checked;
+  renderResults();
+  scheduleUrlSync();
 });
 
 advTaxToggleEl.addEventListener("change", () => {

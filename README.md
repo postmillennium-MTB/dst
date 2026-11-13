@@ -57,7 +57,18 @@ Links made before the views existed carry calculator settings and no `v=` key, s
 - *Assumed holding period*: 4–10 years, shown against an illustrative bell curve.
 
 **Projected results**
-- *Tax rate on distributions*: applied to the part of each year's distribution that is not sheltered. It feeds the after-tax cash flow figure and the taxable-equivalent / after-tax yield column in each card's schedule.
+- *Ordinary income rate* (now in Tax assumptions): applied to the part of each year's distribution that is not sheltered. It feeds the after-tax cash flow figure and the taxable-equivalent / after-tax yield column in each card's schedule.
+
+**721 UPREIT** (optional, off by default)
+- *Model a 721 exchange into an UPREIT*: in the chosen year of the DST hold (*721 in year*, default 2), the DST portfolio is contributed to a REIT operating partnership for OP units, tax deferred. The units start at the portfolio's equity value then (property value less debt).
+- *REIT distribution yield*, *Unit value growth* (illustrative, 4.5% and 3%), and *Return of capital share* (default 0%): the share of each distribution that is return of capital.
+- A 10-year projection: tiles, a stacked bar per year (after-tax income, return of capital, tax) and a year-by-year table.
+- Taxable distributions use the *Ordinary income rate* from Tax assumptions, multiplied by 80% when the *20% Section 199A deduction* box is checked (made permanent by the 2025 tax law), plus state tax and the NIIT in full.
+- Return of capital is untaxed but lowers basis; once basis hits zero, further return of capital is taxed as capital gain. Starting basis is the cost basis from "If you'd sold instead," less the DST's sheltered income. The embedded gain at year 10, and its tax at the capital gains rate, is what converting the units to REIT shares or cash would trigger.
+- Not modeled: depreciation recapture, capital-gain dividends, liability shifts at the 721, and fees at the 721 or inside the REIT.
+
+**Print**
+- The printer icon at the top of Projected results prints (or saves as PDF) the results, plus the 721 UPREIT panel when it's on. The printout adds a disclosure box, the date, every assumption and the DST allocations, and keeps the footer disclaimer.
 
 **Fiduciary**
 - Off: an upfront fee and a placement fee are taken off the top before capital is invested. On: those two fees are removed. See "What this tool does not do" for the limits of that switch.
