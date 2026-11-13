@@ -42,6 +42,14 @@
     · EVENT WIRING ............... all listeners, built from the registries
     · init() ..................... seeds the example portfolio, applies any hash
 
+  VIEWS (tab bar at the top, VIEWS registry) ..... 1031 paths · Walkthrough · Full calculator
+    · VIEW TABS / 1031 PATHS / WALKTHROUGH ...... their CSS, just above the reduced-motion rule
+    · EXCHANGE_PATHS ............. the three illustrated structures (data block)
+    · WALKTHROUGH_FIELDS / _PRESETS / _STEPS .... the walkthrough's inputs, examples, step order
+    · ILLUSTRATIONS .............. isometric house / DST / UPREIT drawings (makeCanvas, isoXY)
+    · VIEW: 1031 PATHS / VIEW: WALKTHROUGH / VIEW SWITCHING  their logic, before EVENT WIRING
+    · URL keys: v (view), p (path), wp / w / wn / ws (walkthrough)
+
   TO ADD A PROPERTY CATEGORY: add ONE line to CATEGORY_DEFAULTS (and one
       --cat-* CSS variable at the next free slot in :root). The picker, the
       cards, the breakdown table and the URL codec all derive from it.
@@ -139,6 +147,38 @@
   --chart-cashflow:     var(--accent);
   --chart-appreciation: #c9720f;
   --chart-paydown:      var(--cat-zerocoupon);
+
+  /* Illustration palette for the "1031 paths" view (houses, the DST building,
+     the UPREIT portfolio). Each solid is drawn with three faces -- top, lit
+     side, shaded side -- so each object carries a light/mid/dark trio. Kept
+     separate from the category colors above on purpose: a house is not a
+     "multifamily DST", and borrowing that blue would imply a link. */
+  --illo-ground:       #dfe5ea;
+  --illo-house-lit:    #f3e6cf;
+  --illo-house-shade:  #dcc8a6;
+  --illo-roof-lit:     #b8553c;
+  --illo-roof-shade:   #8e3f2c;
+  --illo-house2-lit:   #dbe6ee;
+  --illo-house2-shade: #b9cad7;
+  --illo-trim:         #5b4636;
+  --illo-window:       #8fb3cf;
+  --illo-brick-lit:    #b9603f;
+  --illo-brick-shade:  #94492f;
+  --illo-mortar:       rgba(255,255,255,0.22);
+  --illo-roof-flat:    #c9cfd5;
+  --illo-tower-lit:    #a9bccb;
+  --illo-tower-shade:  #7f97aa;
+  --illo-steel-lit:    #c6ced6;
+  --illo-steel-shade:  #9aa6b2;
+  /* "Your share" highlight. Amber rather than the accent blue so it can't be
+     mistaken for the window glass, and always paired with a text callout so
+     the meaning never rides on color alone. */
+  --illo-highlight:    #f5b301;
+  --illo-highlight-ink:#7a4f00;
+
+  /* Walkthrough comparison bars */
+  --bar-kept:    var(--accent);
+  --bar-tax:     #c2413a;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -787,6 +827,220 @@ footer.disclaimer .pmr-link { display: inline-block; margin-top: 4px; font-weigh
   .years-field { grid-column: span 2; min-width: 260px; }
 }
 
+/* ==========================================================================
+   VIEW TABS
+   Three top-level views built from the VIEWS registry: the 1031 paths
+   explainer, the step-by-step walkthrough, and the full calculator. Built
+   for filming -- the two explainer views carry one idea per screen, large
+   type, and read the same in a 16x9 and a 9x16 frame.
+   ========================================================================== */
+.view-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 5px;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow-x: auto;
+}
+.view-tab {
+  flex: 1 1 0;
+  white-space: nowrap;
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.view-tab svg { flex: none; }
+/* Phone: three labelled tabs don't fit on one line with icons, so the icons
+   go and the labels may wrap -- every tab stays visible, no sideways scroll. */
+@media (max-width: 520px) {
+  .view-tab { white-space: normal; line-height: 1.2; padding: 8px 6px; font-size: 0.85rem; }
+  .view-tab svg { display: none; }
+}
+/* Selected state is NOT color alone: it also gains weight and a filled
+   background, and aria-selected is set for assistive tech. */
+.view-tab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.view { display: none; flex-direction: column; gap: 32px; }
+/* The explainer views are what goes on camera: give them more of a 16x9
+   frame's width, and drop the calculator's subtitle, which describes the
+   calculator rather than what's on screen. */
+body:not([data-view="calculator"]) .page { max-width: 1160px; }
+body:not([data-view="calculator"]) header p.subtitle { display: none; }
+.view.active { display: flex; }
+
+/* Shared "explainer" type scale. clamp() so the same markup reads on a phone
+   frame and fills a 1080p desktop frame without a separate layout. */
+.panel .xp-title { margin-bottom: 0; font-size: clamp(1.35rem, 1rem + 1.6vw, 2rem); font-weight: 700; letter-spacing: -0.01em; }
+.xp-lede  { color: var(--text-secondary); font-size: clamp(0.95rem, 0.85rem + 0.4vw, 1.1rem); margin-top: 6px; max-width: 62ch; line-height: 1.45; }
+.xp-fine  { color: var(--text-muted); font-size: 0.82rem; line-height: 1.5; max-width: 80ch; }
+
+/* Segmented picker used by both explainer views */
+.seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+.seg button { background: var(--surface-inset); }
+.seg button[aria-pressed="true"] { background: var(--text-primary); border-color: var(--text-primary); color: #fff; }
+
+/* ==========================================================================
+   1031 PATHS
+   Each path is a row of stages joined by labelled arrows. Phone (base):
+   stages stack and the arrows point DOWN. Desktop (min-width below): the
+   stages sit side by side and the arrows point RIGHT -- same markup, the
+   arrow glyph is just rotated.
+   ========================================================================== */
+.path-card { display: flex; flex-direction: column; gap: 14px; }
+.path-card + .path-card { margin-top: 26px; padding-top: 26px; border-top: 1px solid var(--gridline); }
+.path-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.path-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--text-primary); color: #fff; font-weight: 700; font-size: 0.95rem;
+  flex: none; align-self: center;
+}
+.path-name { font-size: clamp(1.15rem, 1rem + 0.8vw, 1.5rem); font-weight: 700; }
+.path-tag  { color: var(--text-secondary); font-size: 0.95rem; }
+
+.path-flow { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+.stage {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  background: var(--surface-inset);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 12px 14px;
+}
+.stage .illo { width: 100%; max-width: 230px; height: auto; display: block; }
+.stage-when  { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+.stage-title { font-size: 1.05rem; font-weight: 700; margin-top: 2px; }
+.role-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 8px; padding: 5px 11px; border-radius: 999px;
+  font-size: 0.88rem; font-weight: 600;
+  background: var(--surface-card); border: 1px solid var(--border); color: var(--text-primary);
+}
+.role-chip svg { color: var(--accent); }
+.stage-note { font-size: 0.85rem; color: var(--text-secondary); margin-top: 8px; line-height: 1.4; max-width: 34ch; }
+
+.flow-arrow {
+  flex: none;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 2px 0;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: center;
+}
+.flow-arrow svg { transform: rotate(90deg); color: var(--accent); flex: none; }
+.flow-arrow .sub { display: block; font-weight: 500; color: var(--text-muted); }
+
+/* What changes after the exchange: three short facts, never a table. */
+.path-facts { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.path-fact {
+  display: flex; gap: 10px; align-items: baseline;
+  padding: 9px 12px; border-radius: 10px; background: var(--surface-inset);
+  font-size: 0.9rem; line-height: 1.4;
+}
+.path-fact strong { flex: none; min-width: 7.5em; color: var(--text-secondary); font-weight: 600; }
+.path-fine { font-size: 0.84rem; color: var(--text-secondary); line-height: 1.5; border-left: 3px solid var(--illo-highlight); padding: 2px 0 2px 10px; }
+
+/* Stage entrance: stages and arrows fade up in order so each path "plays"
+   when it's selected on camera. Removed entirely under reduced motion by the
+   global rule at the end of the stylesheet. */
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.path-card.animate .stage,
+.path-card.animate .flow-arrow { animation: rise 420ms cubic-bezier(.2,.7,.2,1) both; }
+
+@media (min-width: 720px) {
+  .path-flow { flex-direction: row; align-items: stretch; gap: 4px; }
+  .flow-arrow { flex-direction: column; width: 104px; padding: 0 2px; }
+  .flow-arrow svg { transform: none; }
+  .path-facts { grid-template-columns: repeat(3, 1fr); }
+  .path-fact { flex-direction: column; gap: 2px; }
+  .path-fact strong { min-width: 0; }
+}
+
+/* ==========================================================================
+   WALKTHROUGH
+   One step on screen at a time: a headline number in large type, a single
+   sentence, a small visual, and the supporting math behind "Show the work".
+   ========================================================================== */
+.wt-presets { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.wt-edit { margin-top: 12px; }
+.wt-edit summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--accent); padding: 6px 0; }
+.wt-edit summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.wt-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; margin-top: 10px; }
+.wt-fields .advanced-toggle { align-self: end; padding-bottom: 10px; }
+
+.wt-progress { display: flex; gap: 6px; margin: 4px 0 18px; }
+.wt-dot {
+  flex: 1 1 0; min-height: 0; height: 30px; padding: 0 4px;
+  border-radius: 8px; font-size: 0.78rem; font-weight: 600;
+  background: var(--surface-inset); color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wt-dot.done    { background: #d6e4f5; color: var(--text-secondary); }
+.wt-dot[aria-current="step"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.wt-dot .lbl { display: none; }
+@media (min-width: 720px) { .wt-dot .lbl { display: inline; } }
+
+.wt-step { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: center; min-height: 320px; }
+.wt-step.animate { animation: rise 380ms cubic-bezier(.2,.7,.2,1) both; }
+.wt-kicker { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--accent); }
+.wt-title  { font-size: clamp(1.3rem, 1rem + 1.3vw, 1.9rem); font-weight: 700; margin-top: 4px; letter-spacing: -0.01em; }
+.wt-figure { font-size: clamp(2.4rem, 1.6rem + 4vw, 4.2rem); font-weight: 800; letter-spacing: -0.02em; margin-top: 10px; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.wt-figure.good { color: var(--good-text); }
+.wt-figure.bad  { color: var(--bar-tax); }
+.wt-figure-label { font-size: 0.95rem; color: var(--text-secondary); font-weight: 600; margin-top: 4px; }
+.wt-caption { font-size: clamp(1rem, 0.9rem + 0.4vw, 1.18rem); line-height: 1.45; margin-top: 12px; max-width: 46ch; }
+.wt-visual { display: flex; justify-content: center; }
+.wt-visual .illo { width: 100%; max-width: 300px; height: auto; }
+
+.wt-work { margin-top: 16px; }
+.wt-work summary { cursor: pointer; font-weight: 600; font-size: 0.92rem; color: var(--accent); padding: 6px 0; }
+.wt-work summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.work-table { width: 100%; max-width: 480px; border-collapse: collapse; margin-top: 6px; font-size: 0.92rem; font-variant-numeric: tabular-nums; }
+.work-table td { padding: 6px 0; border-bottom: 1px solid var(--gridline); }
+.work-table td:last-child { text-align: right; padding-left: 16px; white-space: nowrap; }
+.work-table tr.total td { font-weight: 700; border-bottom: none; border-top: 2px solid var(--text-primary); }
+.work-table .op { color: var(--text-muted); display: inline-block; width: 1.2em; }
+.work-note { font-size: 0.82rem; color: var(--text-muted); margin-top: 8px; max-width: 60ch; line-height: 1.45; }
+
+.wt-nav { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--gridline); }
+.wt-nav .count { color: var(--text-muted); font-size: 0.85rem; }
+
+/* Sell-vs-exchange bars (inline SVG would also work; plain divs keep the
+   labels as real, wrapping text on a narrow phone frame). */
+.cmp { display: flex; flex-direction: column; gap: 16px; width: 100%; }
+.cmp-row .cmp-label { display: flex; justify-content: space-between; gap: 10px; font-size: 0.95rem; font-weight: 600; margin-bottom: 6px; }
+.cmp-row .cmp-label span:last-child { font-variant-numeric: tabular-nums; }
+.cmp-track { display: flex; height: 34px; border-radius: 8px; overflow: hidden; background: var(--surface-inset); }
+.cmp-seg { height: 100%; transition: width 400ms ease; }
+.cmp-seg.kept { background: var(--bar-kept); }
+/* Tax slice is hatched as well as red, so it stays distinct in grayscale
+   or for a color-blind viewer. */
+.cmp-seg.tax  { background: repeating-linear-gradient(135deg, var(--bar-tax) 0 8px, #a3332d 8px 16px); }
+.cmp-legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.82rem; color: var(--text-secondary); }
+.cmp-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+@media (min-width: 720px) {
+  .wt-step { grid-template-columns: 1.15fr 1fr; gap: 32px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
@@ -804,6 +1058,74 @@ footer.disclaimer .pmr-link { display: inline-block; margin-top: 4px; font-weigh
       the pieces add up.
     </p>
   </header>
+
+  <!-- Shared SVG defs (brick textures) for the illustrations. Lives in its own
+       zero-size, ALWAYS-RENDERED svg: patterns inside a display:none view's svg
+       stop painting in Chrome, and every drawing references these by id. The
+       skew matches each wall's isometric slope so the courses run along it. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      <pattern id="brickR" width="10" height="5" patternUnits="userSpaceOnUse" patternTransform="skewY(-30)">
+        <rect width="10" height="5" style="fill:var(--illo-brick-lit)"/>
+        <path d="M0 0.3H10M0 2.8H10M0.3 0V2.5M5.3 2.5V5" style="stroke:var(--illo-mortar)" stroke-width="0.6" fill="none"/>
+      </pattern>
+      <pattern id="brickL" width="10" height="5" patternUnits="userSpaceOnUse" patternTransform="skewY(30)">
+        <rect width="10" height="5" style="fill:var(--illo-brick-shade)"/>
+        <path d="M0 0.3H10M0 2.8H10M0.3 0V2.5M5.3 2.5V5" style="stroke:var(--illo-mortar)" stroke-width="0.6" fill="none"/>
+      </pattern>
+    </defs>
+  </svg>
+
+  <!-- ======================= VIEW TABS ======================= -->
+  <!-- Buttons are BUILT FROM THE `VIEWS` REGISTRY in the script below. -->
+  <nav class="view-tabs" id="viewTabs" role="tablist" aria-label="Choose a view"></nav>
+
+  <!-- ======================= VIEW: 1031 PATHS ======================= -->
+  <div class="view" id="view-paths" role="tabpanel" aria-labelledby="tab-paths">
+    <section class="panel">
+      <h2 class="xp-title">Three ways to roll a property forward</h2>
+      <p class="xp-lede">Each path starts the same way: you sell an investment property and defer the tax with a 1031 exchange. What changes is the role you play afterward.</p>
+      <!-- Built from EXCHANGE_PATHS, plus an "All three" option. -->
+      <div class="seg" id="pathPicker" role="group" aria-label="Choose a path"></div>
+    </section>
+    <section class="panel" id="pathList" aria-live="polite"></section>
+    <p class="xp-fine" id="pathsFine"></p>
+  </div>
+
+  <!-- ======================= VIEW: WALKTHROUGH ======================= -->
+  <div class="view" id="view-walkthrough" role="tabpanel" aria-labelledby="tab-walkthrough">
+    <section class="panel">
+      <h2 class="xp-title">Walk through an exchange</h2>
+      <p class="xp-lede">A hypothetical landlord sells a rental. Pick a scenario, then compare selling outright with a 1031 exchange into a DST.</p>
+      <!-- Built from WALKTHROUGH_PRESETS. -->
+      <div class="wt-presets" id="wtPresets" role="group" aria-label="Example scenarios"></div>
+      <details class="wt-edit">
+        <summary>Edit the numbers</summary>
+        <!-- Built from WALKTHROUGH_FIELDS. The NIIT checkbox is static markup so
+             enhanceCheckboxes() gives it the same Lucide box as the others. -->
+        <div class="wt-fields" id="wtFields">
+          <label class="advanced-toggle" id="wtNiitWrap">
+            <input type="checkbox" id="wtNiit">
+            3.8% NIIT
+          </label>
+        </div>
+      </details>
+    </section>
+
+    <section class="panel">
+      <div class="wt-progress" id="wtProgress"></div>
+      <div id="wtStage" aria-live="polite"></div>
+      <div class="wt-nav">
+        <button type="button" id="wtBack">&larr; Back</button>
+        <span class="count" id="wtCount"></span>
+        <button type="button" class="primary" id="wtNext">Next &rarr;</button>
+      </div>
+    </section>
+    <p class="xp-fine" id="wtFine"></p>
+  </div>
+
+  <!-- ======================= VIEW: FULL CALCULATOR ======================= -->
+  <div class="view" id="view-calculator" role="tabpanel" aria-labelledby="tab-calculator">
 
   <!-- ======================= PORTFOLIO SETUP ======================= -->
   <section class="panel">
@@ -1027,6 +1349,7 @@ footer.disclaimer .pmr-link { display: inline-block; margin-top: 4px; font-weigh
     <div id="grossUpResult" aria-live="polite"></div>
     </div>
   </section>
+  </div><!-- /view-calculator -->
 
   <footer class="disclaimer">
     <p>
@@ -1097,6 +1420,12 @@ const ICON_PATHS = {
   squareCheck:   `<rect width="18" height="18" x="3" y="3" rx="2"/><path d="m16 9-5.5 5.5L8 12"/>`,
   panelTopOpen:  `<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="m15 14-3 3-3-3"/>`,
   panelBottomOpen: `<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 15h18"/><path d="m9 10 3-3 3 3"/>`,
+  arrowRight:    `<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>`,
+  wrench:        `<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>`,
+  pieChart:      `<path d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z"/><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/>`,
+  route:         `<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>`,
+  listOrdered:   `<path d="M10 12h11"/><path d="M10 18h11"/><path d="M10 6h11"/><path d="M4 10h2"/><path d="M4 6h1v4"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/>`,
+  calculator:    `<rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/>`,
   landmark:      `<path d="M10 18v-7"/><path d="M11.119 2.205a2 2 0 0 1 1.762 0l7.84 3.846A.5.5 0 0 1 20.5 7h-17a.5.5 0 0 1-.22-.949z"/><path d="M14 18v-7"/><path d="M18 18v-7"/><path d="M3 22h18"/><path d="M6 18v-7"/>`,
 };
 
@@ -1308,6 +1637,164 @@ const PMR_ORIGINS = [
 // wrapper's URL and the copy button will hand out the site link instead, with
 // the scenario hash appended.
 const PMR_WRAPPER_URL = null;
+
+/* ==== VIEWS — the top-level tabs. TO ADD A VIEW: add ONE entry here plus a
+   matching <div class="view" id="view-KEY"> in the markup. The tab bar, the
+   keyboard handling and the `v=` URL key all derive from this array.
+     key     id suffix of the view's container, and its value in the URL.
+             MUST NOT change once shipped -- shared links use it.
+     label   visible tab text
+     icon    key into ICON_PATHS
+   Order is the on-screen order, chosen to match a video's narrative: the
+   concept first, then the worked example, then the full tool. ============== */
+const VIEWS = [
+  { key: "paths",       label: "1031 paths",      icon: "route" },
+  { key: "walkthrough", label: "Walkthrough",     icon: "listOrdered" },
+  { key: "calculator",  label: "Full calculator", icon: "calculator" },
+];
+// View shown when the link names none. A link that carries calculator
+// settings but no `v=` (every link shared before the views existed) still
+// opens on the calculator -- see applyViewHash.
+const DEFAULT_VIEW = "paths";
+
+/* ==== EXCHANGE_PATHS — the three structures on the "1031 paths" view.
+   TO ADD A PATH: add ONE entry. The picker, the cards and the `p=` URL key
+   all derive from it.
+     key      URL value, MUST NOT change once shipped
+     name     card heading; tag: one-line summary under it
+     stages   left-to-right (top-to-bottom on a phone) states of the investor.
+                when   small caps label above the picture
+                title  what the investor holds at that point
+                illo   which drawing: "house" | "house2" | "dst" | "upreit"
+                role   { icon, text } -- the investor's role, as a chip
+                note   one sentence, plain language
+     arrows   one per gap between stages: { label, sub }
+     facts    exactly three short "what it's like after" facts
+     fine     the accuracy caveat that keeps the picture honest. Each one is
+              there because the simple version is wrong in a way that
+              matters -- keep them when editing.
+   Content is deliberately structure-level only: no sponsor, fund, REIT or
+   offering is named or implied (project compliance rule). ================== */
+const EXCHANGE_PATHS = [
+  {
+    key: "traditional",
+    name: "Traditional 1031",
+    tag: "Landlord before, landlord after",
+    stages: [
+      { when: "Before", title: "Your rental property", illo: "house",
+        role: { icon: "wrench", text: "Active landlord" },
+        note: "You find the tenants, handle the repairs and make every decision." },
+      { when: "After", title: "A replacement property you choose", illo: "house2",
+        role: { icon: "wrench", text: "Active landlord" },
+        note: "Same job, new address. Bigger or different, but still yours to run." },
+    ],
+    arrows: [{ label: "1031 exchange", sub: "tax deferred" }],
+    facts: [
+      { k: "Who manages",  v: "You" },
+      { k: "Your control", v: "Full: you pick the property and run it" },
+      { k: "What's next",  v: "Another 1031 later, or sell and pay the deferred tax" },
+    ],
+    fine: "Tax is deferred, not forgiven. To defer all of it, the replacement must cost at least the net sale price, all the equity must be reinvested, and any mortgage paid off must be replaced with new debt or added cash. The replacement must be identified within 45 days and closed within 180.",
+  },
+  {
+    key: "dst",
+    name: "1031 into a DST",
+    tag: "Landlord before, passive investor after",
+    stages: [
+      { when: "Before", title: "Your rental property", illo: "house",
+        role: { icon: "wrench", text: "Active landlord" },
+        note: "You find the tenants, handle the repairs and make every decision." },
+      { when: "After · often 5 to 10 years", title: "A fractional share of a DST", illo: "dst",
+        role: { icon: "armchair", text: "Passive investor" },
+        note: "A professional sponsor runs the property and passes along your share of the income." },
+    ],
+    arrows: [{ label: "1031 exchange", sub: "tax deferred" }],
+    facts: [
+      { k: "Who manages",  v: "A professional sponsor" },
+      { k: "Your control", v: "None over day-to-day or sale decisions" },
+      { k: "What's next",  v: "When the property sells: another 1031, or pay the deferred tax" },
+    ],
+    fine: "A DST interest is an undivided fractional interest in the whole property, not ownership of particular units. The sponsor decides when to sell, so the hold period is an estimate, not a promise. DST interests are generally illiquid and usually limited to accredited investors.",
+  },
+  {
+    key: "upreit",
+    name: "DST, then a 721 into an UPREIT",
+    tag: "Landlord, then DST investor, then REIT partnership unitholder",
+    stages: [
+      { when: "Before", title: "Your rental property", illo: "house",
+        role: { icon: "wrench", text: "Active landlord" },
+        note: "You find the tenants, handle the repairs and make every decision." },
+      { when: "First · often about 2 years", title: "A fractional share of a DST", illo: "dst",
+        role: { icon: "armchair", text: "Passive investor" },
+        note: "A sponsor runs one property, much like path 2." },
+      { when: "Then · after the 721", title: "Units in a REIT's operating partnership", illo: "upreit",
+        role: { icon: "pieChart", text: "OP unitholder" },
+        note: "Your stake is now part of a larger pool of properties held through the REIT's operating partnership." },
+    ],
+    arrows: [
+      { label: "1031 exchange", sub: "tax deferred" },
+      { label: "721 exchange",  sub: "tax deferred" },
+    ],
+    facts: [
+      { k: "Who manages",  v: "The REIT's management team" },
+      { k: "Your control", v: "None; you hold partnership units" },
+      { k: "What's next",  v: "Convert units to REIT shares or cash over time, a taxable step" },
+    ],
+    fine: "After a 721 you hold operating partnership (OP) units, not REIT shares. They can usually be converted to REIT shares or redeemed for cash later, and that conversion is a taxable event; converting in batches can spread the tax over several years. Once in the UPREIT, further 1031 exchanges are generally no longer available. Whether, and when, a DST is contributed to an UPREIT is typically the sponsor's decision, not a guarantee.",
+  },
+];
+const PATHS_FINE_PRINT = "Educational illustration of how these structures generally work. It does not describe any specific offering, sponsor or REIT. Hold periods shown are common ranges, not promises. Tax deferral depends on meeting IRS requirements; consult a qualified tax advisor.";
+
+/* ==== WALKTHROUGH_FIELDS — every input of the walkthrough's "Edit the
+   numbers" drawer. TO ADD ONE: add ONE entry, give every preset a value for
+   it, and use it in computeWalkthrough. The markup, the listener, the
+   clamping and the `w=` URL slot all derive from this array.
+     key     property on wt.values; also the field's position in the `w=` URL
+             list, so APPEND new fields -- never reorder or delete, or older
+             links will load values into the wrong fields.
+     rest    same meaning as in SCALAR_FIELDS
+   ============================================================================ */
+const WALKTHROUGH_FIELDS = [
+  { key: "salePrice",     label: "Sale price",                min: 0, max: MAX_DOLLAR_FIELD, step: 25000, prefix: "$" },
+  { key: "sellCostPct",   label: "Selling costs",             min: 0, max: 15,  step: 0.5,  suffix: "%" },
+  { key: "mortgage",      label: "Mortgage paid off",         min: 0, max: MAX_DOLLAR_FIELD, step: 25000, prefix: "$" },
+  { key: "basis",         label: "Adjusted basis",            min: 0, max: MAX_DOLLAR_FIELD, step: 25000, prefix: "$" },
+  { key: "depreciation",  label: "Depreciation taken",        min: 0, max: MAX_DOLLAR_FIELD, step: 25000, prefix: "$" },
+  { key: "capGainsRate",  label: "Federal cap. gains rate",   min: 0, max: 40,  step: 1,    suffix: "%" },
+  { key: "recaptureRate", label: "Federal recapture rate",    min: 0, max: 40,  step: 1,    suffix: "%" },
+  { key: "stateTaxRate",  label: "State tax",                 min: 0, max: 20,  step: 0.25, suffix: "%" },
+  { key: "incomeRate",    label: "Illustrative income rate",  min: 0, max: 12,  step: 0.25, suffix: "%" },
+];
+
+/* ==== WALKTHROUGH_PRESETS — one-click example scenarios, so nothing has to
+   be typed on camera. TO ADD ONE: add ONE entry with a value for every
+   WALKTHROUGH_FIELDS key.
+   These are HYPOTHETICAL investors, not clients and not market data. The
+   income rate is the same assumption on both sides of the comparison and is
+   a round illustrative number, not the rate of any offering (compliance
+   rule: asset classes only). 4.5% state is a round placeholder, not any
+   particular state. Adjusted basis is AFTER depreciation, as on a tax return.
+   ============================================================================ */
+const WALKTHROUGH_PRESETS = [
+  { label: "Paid-off rental, held for years", niit: true,
+    values: { salePrice: 2000000, sellCostPct: 6, mortgage: 0,      basis: 450000, depreciation: 300000, capGainsRate: 20, recaptureRate: 25, stateTaxRate: 4.5, incomeRate: 5 } },
+  { label: "Rental with a mortgage", niit: false,
+    values: { salePrice: 1600000, sellCostPct: 6, mortgage: 500000, basis: 700000, depreciation: 220000, capGainsRate: 15, recaptureRate: 25, stateTaxRate: 4.5, incomeRate: 5 } },
+  { label: "Larger property, big gain", niit: true,
+    values: { salePrice: 3500000, sellCostPct: 5, mortgage: 900000, basis: 800000, depreciation: 650000, capGainsRate: 20, recaptureRate: 25, stateTaxRate: 4.5, incomeRate: 5 } },
+];
+
+/* ==== WALKTHROUGH_STEPS — the order and short names of the walkthrough's
+   steps. Each key has a matching builder in WALKTHROUGH_STEP_BUILDERS (logic
+   section), which supplies the numbers. Reorder here to reorder the video. */
+const WALKTHROUGH_STEPS = [
+  { key: "sale",     short: "The sale" },
+  { key: "tax",      short: "Tax if you sell" },
+  { key: "exchange", short: "Exchange instead" },
+  { key: "income",   short: "Income" },
+  { key: "compare",  short: "Side by side" },
+];
+const WALKTHROUGH_FINE_PRINT = "Hypothetical illustration, not a projection and not tax advice. The tax estimate adds the federal, state and NIIT rates you enter and ignores brackets, NIIT income thresholds, state deductibility, AMT and installment options. The income rate is an assumption applied equally to both sides; DST distributions are not guaranteed, vary by offering and are generally taxable, partly offset by depreciation. DSTs carry their own risks, fees and illiquidity. Describes asset classes only, not any specific offering.";
 
 /* ================== END OF DATA — everything below is logic ================== */
 
@@ -2477,6 +2964,7 @@ function encodeState() {
     if (ys.some(Boolean)) parts.push("ys=" + ys.join(";"));
     if (sh.some(Boolean)) parts.push("sh=" + sh.join(";"));
   }
+  parts.push(encodeViewState());
   return parts.join("&");
 }
 
@@ -2595,6 +3083,607 @@ function syncAllControls() {
   updateFiduciaryHint();
   renderCardList();
   renderResults();
+}
+
+
+const viewTabsEl    = document.getElementById("viewTabs");
+const pathPickerEl  = document.getElementById("pathPicker");
+const pathListEl    = document.getElementById("pathList");
+const pathsFineEl   = document.getElementById("pathsFine");
+const wtPresetsEl   = document.getElementById("wtPresets");
+const wtFieldsEl    = document.getElementById("wtFields");
+const wtNiitEl      = document.getElementById("wtNiit");
+const wtProgressEl  = document.getElementById("wtProgress");
+const wtStageEl     = document.getElementById("wtStage");
+const wtBackEl      = document.getElementById("wtBack");
+const wtNextEl      = document.getElementById("wtNext");
+const wtCountEl     = document.getElementById("wtCount");
+const wtFineEl      = document.getElementById("wtFine");
+
+/* ----------------------------------------------------------------------------
+   ILLUSTRATIONS (1031 paths + walkthrough)
+   Hand-built isometric drawings: a house, a brick DST building with the
+   investor's share highlighted, and an UPREIT's pool of mixed properties.
+   Everything is drawn in 3-D "building units" and projected with isoXY, so
+   a drawing is tuned by editing box sizes, not screen coordinates. Each
+   canvas measures what it drew and sets its own viewBox, so a size change
+   never clips.
+   Axes: a runs back-right, b runs back-left, z runs up. A solid's two visible
+   walls are its b = b0 face ("right", lit) and its a = a0 face ("left",
+   shaded). Draw back-to-front (painter's order).
+   ---------------------------------------------------------------------------- */
+const ISO_COS = 0.866;          // cos 30deg: horizontal share of each iso axis
+const ISO_SIN = 0.5;            // sin 30deg: vertical share
+const ILLO_PAD = 6;             // viewBox padding around a drawing, in drawing units
+const ILLO_EDGE = 'stroke="rgba(40,30,20,0.28)" stroke-width="0.6" stroke-linejoin="round"';
+const CALLOUT_FONT = 13;        // callout pill text size, drawing units
+const CALLOUT_CHAR_W = 7.1;     // rough glyph width at that size, for sizing the pill
+const RISE_STAGGER_MS = 140;    // delay between stages appearing when a path is shown
+
+const isoXY = ([a, b, z]) => [(a - b) * ISO_COS, -(a + b) * ISO_SIN - z];
+
+function makeCanvas() {
+  const items = [];
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const track = (x, y) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); };
+  const fillStyle = f => f.startsWith("url(") ? `fill:${f}` : `fill:var(${f})`;
+  const c = {
+    poly(p3, fill, extra = ILLO_EDGE) {
+      const p = p3.map(isoXY);
+      p.forEach(([x, y]) => track(x, y));
+      items.push(`<polygon points="${p.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ")}" style="${fillStyle(fill)}" ${extra}/>`);
+    },
+    // A rectangular solid. Visible faces only: left (a = a0), right (b = b0), top.
+    box(a, b, z, w, d, h, { lit, shade, top }) {
+      c.poly([[a, b, z], [a, b + d, z], [a, b + d, z + h], [a, b, z + h]], shade);
+      c.poly([[a, b, z], [a + w, b, z], [a + w, b, z + h], [a, b, z + h]], lit);
+      if (top) c.poly([[a, b, z + h], [a + w, b, z + h], [a + w, b + d, z + h], [a, b + d, z + h]], top);
+    },
+    // A rectangle painted on the right (b = b0) face: u runs along a, v up.
+    rightRect(a, b, z, u0, u1, v0, v1, fill, extra) {
+      c.poly([[a + u0, b, z + v0], [a + u1, b, z + v0], [a + u1, b, z + v1], [a + u0, b, z + v1]], fill, extra);
+    },
+    // A rectangle painted on the left (a = a0) face: u runs along b, v up.
+    leftRect(a, b, z, u0, u1, v0, v1, fill, extra) {
+      c.poly([[a, b + u0, z + v0], [a, b + u1, z + v0], [a, b + u1, z + v1], [a, b + u0, z + v1]], fill, extra);
+    },
+    // Labelled pill with a leader line to a 3-D anchor point. Text lines are
+    // real <text>, so they stay crisp at any size.
+    // dx === "center" hangs the pill centered under (or over) the anchor,
+    // which keeps a wide label from widening -- and so shrinking -- the drawing.
+    callout(anchor3, dx, dy, lines) {
+      const [ax, ay] = isoXY(anchor3);
+      const w = Math.max(...lines.map(l => l.length)) * CALLOUT_CHAR_W + 14;
+      const h = lines.length * (CALLOUT_FONT + 3) + 8;
+      const centered = dx === "center";
+      const px = centered ? ax - w / 2 : ax + dx, py = ay + dy;
+      track(px, py); track(px + w, py + h);
+      const ex = centered ? ax : dx > 0 ? px : px + w;
+      const ey = centered ? (dy > 0 ? py : py + h) : py + h / 2;
+      items.push(`<line x1="${ax.toFixed(1)}" y1="${ay.toFixed(1)}" x2="${ex.toFixed(1)}" y2="${ey.toFixed(1)}" style="stroke:var(--illo-highlight-ink)" stroke-width="1.2"/>`);
+      items.push(`<circle cx="${ax.toFixed(1)}" cy="${ay.toFixed(1)}" r="2.2" style="fill:var(--illo-highlight-ink)"/>`);
+      items.push(`<rect x="${px.toFixed(1)}" y="${py.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="${(h / 2).toFixed(1)}" style="fill:var(--illo-highlight);stroke:var(--illo-highlight-ink)" stroke-width="1"/>`);
+      lines.forEach((l, i) => items.push(`<text x="${(px + w / 2).toFixed(1)}" y="${(py + 4 + (i + 1) * (CALLOUT_FONT + 3) - 3).toFixed(1)}" text-anchor="middle" font-size="${CALLOUT_FONT}" font-weight="700" style="fill:#3d2800;font-family:system-ui,-apple-system,'Segoe UI',sans-serif">${esc(l)}</text>`));
+    },
+    svg(label) {
+      const vx = x0 - ILLO_PAD, vy = y0 - ILLO_PAD, vw = x1 - x0 + 2 * ILLO_PAD, vh = y1 - y0 + 2 * ILLO_PAD;
+      return `<svg class="illo" viewBox="${vx.toFixed(1)} ${vy.toFixed(1)} ${vw.toFixed(1)} ${vh.toFixed(1)}" role="img" aria-label="${esc(label)}">${items.join("")}</svg>`;
+    },
+  };
+  return c;
+}
+
+const WINDOW_FILL = "--illo-window";
+const TRIM_EDGE = 'style="stroke:var(--illo-trim)" stroke-width="0.9" stroke-linejoin="round"';
+
+// A gabled single-family rental. "house2" is the replacement property in the
+// traditional path: same build, cooler siding, so before/after read as two
+// different buildings at a glance.
+function houseSVG(variant = "house") {
+  const c = makeCanvas();
+  const W = 58, D = 40, H = 34;   // long side, gable side, wall height
+  const R = 22;                   // ridge height above the walls
+  const slope = R / (D / 2);      // roof rise per unit of b
+  const lit = variant === "house2" ? "--illo-house2-lit" : "--illo-house-lit";
+  const shade = variant === "house2" ? "--illo-house2-shade" : "--illo-house-shade";
+  c.poly([[-10, -10, 0], [W + 10, -10, 0], [W + 10, D + 10, 0], [-10, D + 10, 0]], "--illo-ground", "");
+  // Gable wall (left face) as one pentagon, then the long wall.
+  c.poly([[0, 0, 0], [0, D, 0], [0, D, H], [0, D / 2, H + R], [0, 0, H]], shade);
+  c.poly([[0, 0, 0], [W, 0, 0], [W, 0, H], [0, 0, H]], lit);
+  c.rightRect(0, 0, 0, 8, 17, 0, 21, "--illo-trim", "");                       // door
+  c.rightRect(0, 0, 0, 25, 35, 11, 23, WINDOW_FILL, `style="stroke:#fff" stroke-width="1.4"`);
+  c.rightRect(0, 0, 0, 42, 52, 11, 23, WINDOW_FILL, `style="stroke:#fff" stroke-width="1.4"`);
+  c.leftRect(0, 0, 0, 7, 15, 11, 22, WINDOW_FILL, `style="stroke:#fff" stroke-width="1.4"`);
+  c.leftRect(0, 0, 0, 25, 33, 11, 22, WINDOW_FILL, `style="stroke:#fff" stroke-width="1.4"`);
+  c.leftRect(0, 0, 0, 17, 23, H + 5, H + 11, WINDOW_FILL, `style="stroke:#fff" stroke-width="1.2"`); // gable vent
+  // Roof: the visible front plane with a small overhang, then the slab edge
+  // that shows past the gable on both sides of the ridge.
+  const OH = 4, T = 2.6; // overhang, roof thickness
+  c.poly([[-3, -OH, H - OH * slope], [W + 3, -OH, H - OH * slope], [W + 3, D / 2, H + R], [-3, D / 2, H + R]], "--illo-roof-lit");
+  c.poly([[-3, -OH, H - OH * slope], [-3, D / 2, H + R], [-3, D / 2, H + R - T], [-3, -OH, H - OH * slope - T]], "--illo-roof-shade");
+  c.poly([[-3, D / 2, H + R], [-3, D + OH, H - OH * slope], [-3, D + OH, H - OH * slope - T], [-3, D / 2, H + R - T]], "--illo-roof-shade");
+  // Chimney, seated on the roof plane (its bottom edge follows the slope).
+  const ca = 38, cb = 3, cw = 7, cd = 6, ctop = H + R + 6;
+  c.poly([[ca, cb, H + cb * slope], [ca, cb + cd, H + (cb + cd) * slope], [ca, cb + cd, ctop], [ca, cb, ctop]], "--illo-brick-shade");
+  c.poly([[ca, cb, H + cb * slope], [ca + cw, cb, H + cb * slope], [ca + cw, cb, ctop], [ca, cb, ctop]], "--illo-brick-lit");
+  c.poly([[ca, cb, ctop], [ca + cw, cb, ctop], [ca + cw, cb + cd, ctop], [ca, cb + cd, ctop]], "--illo-roof-flat");
+  return c.svg(variant === "house2" ? "A different rental house, the replacement property" : "A rental house");
+}
+
+// Window grid helper for a face: cols x floors, cell sizes in building units.
+function windowGrid(c, side, a, b, z, { cols, floors, u0, du, w, v0, dv, h }, highlight = () => false) {
+  for (let f = 0; f < floors; f++) {
+    for (let k = 0; k < cols; k++) {
+      const on = highlight(f, k);
+      const fill = on ? "--illo-highlight" : WINDOW_FILL;
+      const extra = on ? 'style="stroke:var(--illo-highlight-ink)" stroke-width="1.3"' : 'style="stroke:rgba(255,255,255,0.55)" stroke-width="0.8"';
+      const args = [a, b, z, u0 + k * du, u0 + k * du + w, v0 + f * dv, v0 + f * dv + h, fill, extra];
+      side === "right" ? c.rightRect(...args) : c.leftRect(...args);
+    }
+  }
+}
+
+// The DST: one brick apartment building, a professional sponsor's property,
+// with three windows lit to stand for the investor's fractional share. The
+// callout says "share", not "units": a DST interest is undivided (see the
+// path's fine print), the windows are a picture of proportion only.
+const DST_SHARE_FLOOR = 2;           // which floor's windows carry the highlight
+const DST_SHARE_COLS = [1, 2, 3];    // which of the four front columns
+function dstSVG() {
+  const c = makeCanvas();
+  const W = 66, D = 34, H = 88;
+  c.poly([[-10, -10, 0], [W + 10, -10, 0], [W + 10, D + 10, 0], [-10, D + 10, 0]], "--illo-ground", "");
+  c.box(0, 0, 0, W, D, H, { lit: "url(#brickR)", shade: "url(#brickL)" });
+  // Stone base course and lobby glass
+  c.rightRect(0, 0, 0, 0, W, 0, 13, "--illo-roof-flat");
+  c.leftRect(0, 0, 0, 0, D, 0, 13, "--illo-steel-shade");
+  c.rightRect(0, 0, 0, 26, 40, 0, 10, WINDOW_FILL, `style="stroke:#fff" stroke-width="1.2"`);
+  const grid = { floors: 5, v0: 19, dv: 13, h: 8, w: 8 };
+  windowGrid(c, "right", 0, 0, 0, { ...grid, cols: 4, u0: 6, du: 15 },
+    (f, k) => f === DST_SHARE_FLOOR && DST_SHARE_COLS.includes(k));
+  windowGrid(c, "left", 0, 0, 0, { ...grid, cols: 2, u0: 6, du: 14 });
+  // Cornice and a rooftop mechanical unit
+  c.box(-1.5, -1.5, H, W + 3, D + 3, 3, { lit: "--illo-roof-flat", shade: "--illo-steel-shade", top: "--illo-steel-lit" });
+  c.box(40, 12, H + 3, 13, 10, 6, { lit: "--illo-steel-lit", shade: "--illo-steel-shade", top: "--illo-roof-flat" });
+  const v = grid.v0 + DST_SHARE_FLOOR * grid.dv + grid.h / 2;
+  c.callout([6 + 3 * 15 + 4, 0, v], 22, -10, ["Your fractional", "share"]);
+  return c.svg("A brick apartment building managed by a professional sponsor, with a few windows highlighted to show the investor's fractional share");
+}
+
+// The UPREIT: several property types on one shared platform, standing for the
+// operating partnership's pool. The callout points at the platform, not at a
+// building, because OP units are a share of the whole partnership.
+function upreitSVG() {
+  const c = makeCanvas();
+  const PW = 122, PD = 82, PH = 5;
+  c.poly([[-8, -8, 0], [PW + 8, -8, 0], [PW + 8, PD + 8, 0], [-8, PD + 8, 0]], "--illo-ground", "");
+  c.box(0, 0, 0, PW, PD, PH, { lit: "--illo-steel-lit", shade: "--illo-steel-shade", top: "--illo-roof-flat" });
+  const z = PH;
+  // Painter's order: farthest first (largest a + b).
+  // Office tower, ribbon windows
+  c.box(72, 50, z, 24, 24, 96, { lit: "--illo-tower-lit", shade: "--illo-tower-shade", top: "--illo-steel-lit" });
+  for (let v = 8; v < 92; v += 9) {
+    c.rightRect(72, 50, z, 2, 22, v, v + 4, WINDOW_FILL, "");
+    c.leftRect(72, 50, z, 2, 22, v, v + 4, WINDOW_FILL, "");
+  }
+  // Warehouse / industrial, loading doors
+  c.box(60, 8, z, 52, 28, 22, { lit: "--illo-steel-lit", shade: "--illo-steel-shade", top: "--illo-roof-flat" });
+  [6, 18, 30, 42].forEach(u => c.rightRect(60, 8, z, u, u + 8, 0, 12, "--illo-tower-shade", ""));
+  // Brick apartments
+  c.box(8, 46, z, 34, 22, 56, { lit: "url(#brickR)", shade: "url(#brickL)", top: "--illo-roof-flat" });
+  windowGrid(c, "right", 8, 46, z, { cols: 3, floors: 4, u0: 5, du: 10, w: 6, v0: 9, dv: 11, h: 6 });
+  windowGrid(c, "left", 8, 46, z, { cols: 2, floors: 4, u0: 4, du: 9, w: 6, v0: 9, dv: 11, h: 6 });
+  // Low retail / medical building
+  c.box(8, 8, z, 36, 26, 24, { lit: "--illo-house2-lit", shade: "--illo-house2-shade", top: "--illo-roof-flat" });
+  c.rightRect(8, 8, z, 4, 32, 8, 16, WINDOW_FILL, "");
+  c.leftRect(8, 8, z, 4, 22, 8, 16, WINDOW_FILL, "");
+  c.callout([PW * 0.5, 0, PH / 2], "center", 16, ["Your OP units:", "a share of the whole pool"]);
+  return c.svg("Several different properties on one shared platform, standing for a REIT operating partnership's portfolio");
+}
+
+const ILLOS = { house: () => houseSVG("house"), house2: () => houseSVG("house2"), dst: dstSVG, upreit: upreitSVG };
+// Drawings never change with inputs, so build each once.
+const illoCache = {};
+const illo = key => (illoCache[key] = illoCache[key] || ILLOS[key]());
+
+/* ----------------------------------------------------------------------------
+   VIEW: 1031 PATHS
+   ---------------------------------------------------------------------------- */
+const ALL_PATHS = "all";
+const pathState = { selected: EXCHANGE_PATHS[0].key };
+
+function pathCardHTML(p, n) {
+  const parts = [];
+  let order = 0;
+  const delay = () => `style="animation-delay:${(order++) * RISE_STAGGER_MS}ms"`;
+  p.stages.forEach((s, i) => {
+    if (i > 0) {
+      const a = p.arrows[i - 1];
+      parts.push(`<div class="flow-arrow" ${delay()}>${svgIcon("arrowRight", 30)}<span>${esc(a.label)}<span class="sub">${esc(a.sub)}</span></span></div>`);
+    }
+    parts.push(`
+      <div class="stage" ${delay()}>
+        <span class="stage-when">${esc(s.when)}</span>
+        ${illo(s.illo)}
+        <span class="stage-title">${esc(s.title)}</span>
+        <span class="role-chip">${svgIcon(s.role.icon, 16)}${esc(s.role.text)}</span>
+        <span class="stage-note">${esc(s.note)}</span>
+      </div>`);
+  });
+  return `
+    <article class="path-card animate">
+      <div class="path-head">
+        <span class="path-num">${n}</span>
+        <span class="path-name">${esc(p.name)}</span>
+        <span class="path-tag">${esc(p.tag)}</span>
+      </div>
+      <div class="path-flow">${parts.join("")}</div>
+      <div class="path-facts">${p.facts.map(f => `<div class="path-fact"><strong>${esc(f.k)}</strong><span>${esc(f.v)}</span></div>`).join("")}</div>
+      <p class="path-fine">${esc(p.fine)}</p>
+    </article>`;
+}
+
+function renderPaths() {
+  const sel = pathState.selected;
+  pathPickerEl.innerHTML = [...EXCHANGE_PATHS.map((p, i) => ({ key: p.key, label: `${i + 1}. ${p.name}` })), { key: ALL_PATHS, label: "All three" }]
+    .map(o => `<button type="button" data-path="${o.key}" aria-pressed="${o.key === sel}">${esc(o.label)}</button>`).join("");
+  const shown = sel === ALL_PATHS ? EXCHANGE_PATHS : EXCHANGE_PATHS.filter(p => p.key === sel);
+  pathListEl.innerHTML = shown.map(p => pathCardHTML(p, EXCHANGE_PATHS.indexOf(p) + 1)).join("");
+}
+
+function stepPath(dir) {
+  const keys = [...EXCHANGE_PATHS.map(p => p.key), ALL_PATHS];
+  const i = keys.indexOf(pathState.selected);
+  pathState.selected = keys[clamp(i + dir, 0, keys.length - 1)];
+  renderPaths();
+  scheduleUrlSync();
+}
+
+/* ----------------------------------------------------------------------------
+   VIEW: WALKTHROUGH
+   Its own small model, independent of the calculator's state, because it
+   answers a different question (sell vs. exchange one property) and needs
+   the sale price and mortgage the calculator doesn't ask for. It reuses
+   splitGainTax so both views apply recapture the same way.
+   ---------------------------------------------------------------------------- */
+const wt = {
+  preset: 0,                                     // index into WALKTHROUGH_PRESETS, or -1 once edited
+  values: { ...WALKTHROUGH_PRESETS[0].values },
+  niit: WALKTHROUGH_PRESETS[0].niit,
+  step: 0,
+};
+
+function computeWalkthrough(v = wt.values, niit = wt.niit) {
+  const addOn = v.stateTaxRate + (niit ? NIIT_RATE_PCT : 0);
+  const cgRate = Math.min(v.capGainsRate + addOn, 100);
+  const recRate = Math.min(v.recaptureRate + addOn, 100);
+  const sellCosts = v.salePrice * v.sellCostPct / 100;
+  const netSale = v.salePrice - sellCosts;
+  const equity = netSale - v.mortgage;
+  const gain = Math.max(netSale - v.basis, 0);
+  const recapturePortion = Math.min(v.depreciation, gain);
+  const t = splitGainTax(gain, { capGainsRatePct: cgRate, advancedTax: true, accumulatedDepreciation: v.depreciation, depRecaptureRatePct: recRate });
+  const cashIfSold = equity - t.tax;
+  const r = v.incomeRate / 100;
+  return {
+    sellCosts, netSale, equity, gain, recapturePortion, capGainPortion: gain - recapturePortion,
+    cgRate, recRate, addOn, recaptureTax: t.recaptureTax, capGainTax: t.capGainTax, tax: t.tax,
+    cashIfSold, keptIfSold: Math.max(cashIfSold, 0),
+    ltvNeeded: netSale > 0 ? v.mortgage / netSale : 0,
+    incomeExchange: Math.max(equity, 0) * r,
+    incomeSold: Math.max(cashIfSold, 0) * r,
+  };
+}
+
+// "20% + 4.5% state + 3.8% NIIT" -- so the combined rate is never a mystery.
+function rateParts(fedPct) {
+  const bits = [`${trimNum(fedPct)}% federal`];
+  if (wt.values.stateTaxRate) bits.push(`${trimNum(wt.values.stateTaxRate)}% state`);
+  if (wt.niit) bits.push(`${NIIT_RATE_PCT}% NIIT`);
+  return bits.join(" + ");
+}
+
+const workRow = (label, value, op = "") => `<tr><td><span class="op">${op}</span>${label}</td><td>${value}</td></tr>`;
+const workTotal = (label, value) => `<tr class="total"><td><span class="op">=</span>${label}</td><td>${value}</td></tr>`;
+const workHTML = (rows, note = "") => `
+  <details class="wt-work"${wt.openWork ? " open" : ""}>
+    <summary>Show the work</summary>
+    <table class="work-table"><tbody>${rows}</tbody></table>
+    ${note ? `<p class="work-note">${note}</p>` : ""}
+  </details>`;
+
+// Horizontal comparison bars on one shared scale.
+function cmpHTML(rows, legend = true) {
+  const max = Math.max(...rows.map(r => r.segs.reduce((s, g) => s + g.v, 0)), 1);
+  return `<div class="cmp">
+    ${rows.map(r => `
+      <div class="cmp-row">
+        <div class="cmp-label"><span>${esc(r.label)}</span><span>${r.value}</span></div>
+        <div class="cmp-track" role="img" aria-label="${esc(r.label)}: ${esc(r.aria || "")}">
+          ${r.segs.map(g => `<div class="cmp-seg ${g.cls}" style="width:${(100 * Math.max(g.v, 0) / max).toFixed(2)}%"></div>`).join("")}
+        </div>
+      </div>`).join("")}
+    ${legend ? `<div class="cmp-legend"><span><i style="background:var(--bar-kept)"></i>Working for you</span><span><i style="background:repeating-linear-gradient(135deg,var(--bar-tax) 0 4px,#a3332d 4px 8px)"></i>Paid in tax</span></div>` : ""}
+  </div>`;
+}
+
+const usd = n => fmtUSD.format(n);
+const pctOf = (part, whole) => whole > 0 ? Math.round(100 * part / whole) : 0;
+
+/* Each builder returns { kicker, title, figure, figureClass, figureLabel,
+   caption, visual, work } for one step. Keyed to WALKTHROUGH_STEPS. */
+const WALKTHROUGH_STEP_BUILDERS = {
+  sale: (m, v) => ({
+    title: "You sell the rental",
+    figure: usd(m.equity), figureLabel: "Your equity after the sale",
+    caption: `A ${usd(v.salePrice)} sale. After selling costs and paying off the mortgage, this is the money that is yours to move.`,
+    visual: illo("house"),
+    work: workHTML(
+      workRow("Sale price", usd(v.salePrice)) +
+      workRow(`Selling costs (${trimNum(v.sellCostPct)}%)`, usd(m.sellCosts), "−") +
+      workRow("Mortgage paid off", usd(v.mortgage), "−") +
+      workTotal("Your equity", usd(m.equity))),
+  }),
+  tax: (m, v) => ({
+    title: "If you simply sell, tax comes due",
+    figure: usd(m.tax), figureClass: "bad", figureLabel: "Estimated tax this year",
+    caption: m.gain > 0
+      ? `Your gain is ${usd(m.gain)} over your adjusted basis. Selling outright sends about ${pctOf(m.tax, m.equity)}% of your equity to taxes.`
+      : "There is no gain over your adjusted basis, so selling outright would not trigger this tax.",
+    visual: cmpHTML([{ label: "Your equity", value: usd(m.equity), aria: `${usd(m.keptIfSold)} kept, ${usd(m.tax)} tax`,
+      segs: [{ cls: "kept", v: m.keptIfSold }, { cls: "tax", v: m.tax }] }]),
+    work: workHTML(
+      workRow("Sale price less selling costs", usd(m.netSale)) +
+      workRow("Adjusted basis", usd(v.basis), "−") +
+      workTotal("Gain", usd(m.gain)) +
+      workRow(`Depreciation recapture: ${usd(m.recapturePortion)} × ${trimNum(m.recRate)}%`, usd(m.recaptureTax)) +
+      workRow(`Remaining gain: ${usd(m.capGainPortion)} × ${trimNum(m.cgRate)}%`, usd(m.capGainTax), "+") +
+      workTotal("Estimated tax", usd(m.tax)),
+      `Recapture rate ${rateParts(v.recaptureRate)}. Capital gains rate ${rateParts(v.capGainsRate)}. Rates are simply added; brackets and the NIIT income threshold are not modeled.${m.cashIfSold < 0 ? " Here the tax is larger than the cash from the sale." : ""}`),
+  }),
+  exchange: (m, v) => ({
+    title: "Exchange into a DST instead",
+    figure: usd(Math.max(m.equity, 0)), figureClass: "good", figureLabel: `Reinvested, with ${usd(m.tax)} of tax deferred`,
+    caption: "Through a 1031 exchange, all of your equity buys a fractional share of a professionally managed property. The tax is not forgiven; it is deferred.",
+    visual: illo("dst"),
+    work: workHTML(
+      workRow("Equity reinvested", usd(m.equity)) +
+      workRow("Tax deferred (not paid this year)", usd(m.tax)) +
+      workRow("Replacement value needed, at least", usd(m.netSale)) +
+      workRow("Replacement debt needed, at least", usd(v.mortgage)),
+      v.mortgage > 0
+        ? `To defer the full tax, the mortgage paid off must be replaced: your share of the DST's debt (about ${Math.round(m.ltvNeeded * 100)}% loan-to-value on ${usd(m.netSale)}) or added cash. A shortfall is taxable boot.`
+        : "No mortgage was paid off, so there is no debt to replace. An all-cash (no-debt) DST can work."),
+  }),
+  income: (m, v) => ({
+    title: "More dollars working, more income",
+    figure: `${usd(m.incomeExchange)}<span style="font-size:0.45em;font-weight:700;color:var(--text-secondary)"> /yr</span>`, figureClass: "good",
+    figureLabel: `Illustrative income at ${trimNum(v.incomeRate)}% on the exchanged equity`,
+    caption: `Same assumed rate either way. Exchanging keeps ${usd(m.tax)} more invested, about ${usd(m.incomeExchange - m.incomeSold)} a year more than investing what is left after selling.`,
+    visual: cmpHTML([
+      { label: "Sell, pay tax, invest the rest", value: `${usd(m.incomeSold)}/yr`, aria: `${usd(m.incomeSold)} a year`, segs: [{ cls: "kept", v: m.incomeSold }] },
+      { label: "Exchange into a DST",           value: `${usd(m.incomeExchange)}/yr`, aria: `${usd(m.incomeExchange)} a year`, segs: [{ cls: "kept", v: m.incomeExchange }] },
+    ], false),
+    work: workHTML(
+      workRow(`Exchange: ${usd(Math.max(m.equity, 0))} × ${trimNum(v.incomeRate)}%`, `${usd(m.incomeExchange)}/yr`) +
+      workRow(`Sell: ${usd(m.keptIfSold)} × ${trimNum(v.incomeRate)}%`, `${usd(m.incomeSold)}/yr`, "−") +
+      workTotal("Difference", `${usd(m.incomeExchange - m.incomeSold)}/yr`),
+      "The rate is an assumption you choose, applied to both sides; it is not a projection or the rate of any offering. Distributions are pre-tax and not guaranteed."),
+  }),
+  compare: (m, v) => ({
+    title: "Side by side",
+    figure: `+${usd(m.tax)}`, figureClass: "good", figureLabel: "More invested by exchanging",
+    caption: "Same property, same equity. The difference is whether the tax leaves now or stays invested until a later sale.",
+    visual: cmpHTML([
+      { label: "Sell and pay tax", value: usd(m.keptIfSold), aria: `${usd(m.keptIfSold)} invested, ${usd(m.tax)} tax`, segs: [{ cls: "kept", v: m.keptIfSold }, { cls: "tax", v: m.tax }] },
+      { label: "Exchange into a DST", value: usd(Math.max(m.equity, 0)), aria: `${usd(m.equity)} invested`, segs: [{ cls: "kept", v: Math.max(m.equity, 0) }] },
+    ]),
+    work: workHTML(
+      workRow("Sell: invested after tax", usd(m.keptIfSold)) +
+      workRow("Sell: tax paid now", usd(m.tax)) +
+      workRow("Sell: illustrative income", `${usd(m.incomeSold)}/yr`) +
+      workRow("Exchange: invested", usd(Math.max(m.equity, 0))) +
+      workRow("Exchange: tax deferred", usd(m.tax)) +
+      workRow("Exchange: illustrative income", `${usd(m.incomeExchange)}/yr`),
+      "Deferred, not eliminated: the deferred gain carries into the DST and is taxed when it is eventually sold without another exchange. Under current law, heirs may receive a step-up in basis. A DST also brings fees, illiquidity and no control over the sale date."),
+  }),
+};
+
+function renderWalkthroughPresets() {
+  wtPresetsEl.innerHTML = WALKTHROUGH_PRESETS.map((p, i) =>
+    `<button type="button" data-preset="${i}" aria-pressed="${i === wt.preset}">${esc(p.label)}</button>`).join("");
+}
+
+function renderWalkthrough(animate = false) {
+  const m = computeWalkthrough();
+  const step = WALKTHROUGH_STEPS[wt.step];
+  const s = WALKTHROUGH_STEP_BUILDERS[step.key](m, wt.values);
+  wtProgressEl.innerHTML = WALKTHROUGH_STEPS.map((st, i) =>
+    `<button type="button" class="wt-dot${i < wt.step ? " done" : ""}" data-step-index="${i}" ${i === wt.step ? 'aria-current="step"' : ""} aria-label="Step ${i + 1}: ${esc(st.short)}">${i + 1}<span class="lbl">. ${esc(st.short)}</span></button>`).join("");
+  wtStageEl.innerHTML = `
+    <div class="wt-step${animate ? " animate" : ""}">
+      <div>
+        <div class="wt-kicker">Step ${wt.step + 1} of ${WALKTHROUGH_STEPS.length} · ${esc(step.short)}</div>
+        <div class="wt-title">${esc(s.title)}</div>
+        <div class="wt-figure${s.figureClass ? " " + s.figureClass : ""}">${s.figure}</div>
+        <div class="wt-figure-label">${esc(s.figureLabel)}</div>
+        <p class="wt-caption">${esc(s.caption)}</p>
+        ${s.work}
+      </div>
+      <div class="wt-visual">${s.visual}</div>
+    </div>`;
+  wtBackEl.disabled = wt.step === 0;
+  wtNextEl.disabled = wt.step === WALKTHROUGH_STEPS.length - 1;
+  wtCountEl.textContent = `${wt.step + 1} / ${WALKTHROUGH_STEPS.length}`;
+}
+
+function buildWalkthroughFields() {
+  wtFieldsEl.insertAdjacentHTML("afterbegin", WALKTHROUGH_FIELDS.map(f => numberFieldHTML({
+    id: "wt-" + f.key, label: f.label, value: wt.values[f.key],
+    min: f.min, max: f.max, step: f.step, prefix: f.prefix, suffix: f.suffix,
+  })).join(""));
+  const onField = (e, normalize) => {
+    const f = WALKTHROUGH_FIELDS.find(x => "wt-" + x.key === e.target.id);
+    if (!f) return;
+    const n = clampToField(e.target, e.target.value);
+    if (n === null) return;
+    wt.values[f.key] = n;
+    if (normalize && String(n) !== e.target.value) e.target.value = n;
+    wt.preset = -1;
+    renderWalkthroughPresets();
+    renderWalkthrough();
+    scheduleUrlSync();
+  };
+  wtFieldsEl.addEventListener("input", e => onField(e, false));
+  wtFieldsEl.addEventListener("change", e => onField(e, true));
+}
+
+function syncWalkthroughControls() {
+  for (const f of WALKTHROUGH_FIELDS) {
+    const el = document.getElementById("wt-" + f.key);
+    if (el) el.value = wt.values[f.key];
+  }
+  wtNiitEl.checked = wt.niit;
+  renderWalkthroughPresets();
+  renderWalkthrough();
+}
+
+function goToStep(i) {
+  const next = clamp(i, 0, WALKTHROUGH_STEPS.length - 1);
+  if (next === wt.step) return;
+  // Keep "Show the work" open across steps if it was open, so a presenter
+  // who's walking through the math doesn't have to re-open it every step.
+  wt.openWork = !!wtStageEl.querySelector("details.wt-work[open]");
+  wt.step = next;
+  renderWalkthrough(true);
+  scheduleUrlSync();
+}
+
+/* ----------------------------------------------------------------------------
+   VIEW SWITCHING
+   ---------------------------------------------------------------------------- */
+let currentView = DEFAULT_VIEW;
+
+function renderViewTabs() {
+  viewTabsEl.innerHTML = VIEWS.map(v =>
+    `<button type="button" class="view-tab" role="tab" id="tab-${v.key}" data-view="${v.key}" aria-controls="view-${v.key}" aria-selected="${v.key === currentView}" tabindex="${v.key === currentView ? 0 : -1}">${svgIcon(v.icon, 18)}${esc(v.label)}</button>`).join("");
+}
+
+function showView(key, { sync = true } = {}) {
+  if (!VIEWS.some(v => v.key === key)) key = DEFAULT_VIEW;
+  currentView = key;
+  document.body.dataset.view = key;
+  for (const v of VIEWS) document.getElementById("view-" + v.key).classList.toggle("active", v.key === key);
+  renderViewTabs();
+  if (key === "paths") renderPaths();
+  if (key === "walkthrough") renderWalkthrough(true);
+  if (sync) scheduleUrlSync();
+}
+
+// URL keys owned by the views: v (view), p (path), w (walkthrough values, in
+// WALKTHROUGH_FIELDS order), wn (walkthrough NIIT), ws (walkthrough step),
+// wp (walkthrough preset). Only the open view's keys are written, so a
+// calculator link stays as short as it was.
+function encodeViewState() {
+  const parts = [`v=${currentView}`];
+  if (currentView === "paths") parts.push(`p=${pathState.selected}`);
+  if (currentView === "walkthrough") {
+    if (wt.preset >= 0) parts.push(`wp=${wt.preset}`);
+    else {
+      parts.push("w=" + WALKTHROUGH_FIELDS.map(f => trimNum(wt.values[f.key])).join(","));
+      if (wt.niit) parts.push("wn=1");
+    }
+    parts.push(`ws=${wt.step}`);
+  }
+  return parts.join("&");
+}
+
+// Returns the view to open. `calculatorTouched` is whether the hash carried
+// calculator settings -- an old link with no `v=` should land on the
+// calculator it was made from, not on the new default view.
+function applyViewHash(rawHash, calculatorTouched) {
+  const params = new URLSearchParams(String(rawHash || "").replace(/^#/, ""));
+  if (params.has("p")) {
+    const p = params.get("p");
+    if (p === ALL_PATHS || EXCHANGE_PATHS.some(x => x.key === p)) pathState.selected = p;
+  }
+  if (params.has("wp")) {
+    const i = Number(params.get("wp"));
+    if (WALKTHROUGH_PRESETS[i]) { wt.preset = i; wt.values = { ...WALKTHROUGH_PRESETS[i].values }; wt.niit = WALKTHROUGH_PRESETS[i].niit; }
+  } else if (params.has("w")) {
+    const vals = params.get("w").split(",");
+    WALKTHROUGH_FIELDS.forEach((f, i) => {
+      const n = Number(vals[i]);
+      if (vals[i] !== undefined && vals[i] !== "" && Number.isFinite(n)) wt.values[f.key] = clamp(n, f.min, f.max);
+    });
+    wt.niit = params.get("wn") === "1";
+    wt.preset = -1;
+  }
+  if (params.has("ws")) {
+    const s = Number(params.get("ws"));
+    if (Number.isFinite(s)) wt.step = clamp(Math.round(s), 0, WALKTHROUGH_STEPS.length - 1);
+  }
+  if (params.has("v")) return params.get("v");
+  return calculatorTouched ? "calculator" : DEFAULT_VIEW;
+}
+
+function wireViews() {
+  viewTabsEl.addEventListener("click", e => {
+    const b = e.target.closest("button[data-view]");
+    if (b) showView(b.dataset.view);
+  });
+  // Arrow keys move between tabs while a tab has focus (standard tablist).
+  viewTabsEl.addEventListener("keydown", e => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    const i = VIEWS.findIndex(v => v.key === currentView);
+    const next = VIEWS[(i + (e.key === "ArrowRight" ? 1 : -1) + VIEWS.length) % VIEWS.length];
+    showView(next.key);
+    document.getElementById("tab-" + next.key).focus();
+    e.preventDefault();
+  });
+  pathPickerEl.addEventListener("click", e => {
+    const b = e.target.closest("button[data-path]");
+    if (!b) return;
+    pathState.selected = b.dataset.path;
+    renderPaths();
+    scheduleUrlSync();
+  });
+  wtPresetsEl.addEventListener("click", e => {
+    const b = e.target.closest("button[data-preset]");
+    if (!b) return;
+    const p = WALKTHROUGH_PRESETS[Number(b.dataset.preset)];
+    wt.preset = Number(b.dataset.preset);
+    wt.values = { ...p.values };
+    wt.niit = p.niit;
+    syncWalkthroughControls();
+    scheduleUrlSync();
+  });
+  wtNiitEl.addEventListener("change", () => {
+    wt.niit = wtNiitEl.checked;
+    wt.preset = -1;
+    renderWalkthroughPresets();
+    renderWalkthrough();
+    scheduleUrlSync();
+  });
+  wtBackEl.addEventListener("click", () => goToStep(wt.step - 1));
+  wtNextEl.addEventListener("click", () => goToStep(wt.step + 1));
+  wtProgressEl.addEventListener("click", e => {
+    const b = e.target.closest("button[data-step-index]");
+    if (b) goToStep(Number(b.dataset.stepIndex));
+  });
+  // Presenter keys: left/right arrows step through the walkthrough, or
+  // through the paths, from anywhere on the page except a text field or the
+  // tab bar (which uses them to switch tabs). A clicker that sends arrow
+  // keys works the same way.
+  document.addEventListener("keydown", e => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    if (e.target.closest("input, select, textarea, #viewTabs")) return;
+    const dir = e.key === "ArrowRight" ? 1 : -1;
+    if (currentView === "walkthrough") { goToStep(wt.step + dir); e.preventDefault(); }
+    else if (currentView === "paths") { stepPath(dir); e.preventDefault(); }
+  });
+  pathsFineEl.textContent = PATHS_FINE_PRINT;
+  wtFineEl.textContent = WALKTHROUGH_FINE_PRINT;
 }
 
 /* ----------------------------------------------------------------------------
@@ -2893,14 +3982,22 @@ copyLinkBtnEl.addEventListener("click", async () => {
 window.addEventListener("message", (e) => {
   if (!PMR_ORIGINS.includes(e.origin)) return;
   if (!e.data || e.data.type !== "pmr-hash" || typeof e.data.hash !== "string") return;
-  if (applyHashState(e.data.hash)) syncAllControls();
+  applyFullHash(e.data.hash);
 });
 
 // Also listen for hashchange, not just the hash present at load. Our own
 // writes use replaceState, which does not fire this -- so there's no loop.
-window.addEventListener("hashchange", () => {
-  if (applyHashState(location.hash)) syncAllControls();
-});
+window.addEventListener("hashchange", () => applyFullHash(location.hash));
+
+// Calculator settings first, then the view keys (which need to know whether
+// the calculator was touched -- see applyViewHash).
+function applyFullHash(hash) {
+  const calcTouched = applyHashState(hash);
+  if (calcTouched) syncAllControls();
+  const view = applyViewHash(hash, calcTouched);
+  syncWalkthroughControls();
+  showView(view, { sync: false });
+}
 
 /* ----------------------------------------------------------------------------
    TOUCH / MOBILE DETECTION
@@ -2927,10 +4024,16 @@ function init() {
   state.dsts.push({ ...makeDst("industrial"), amount: 1200000 });
   state.dsts.push({ ...makeDst("multifamily"), amount: 800000 });
 
+  buildWalkthroughFields();
+  wireViews();
+
   // A shared link wins over the seeded example.
-  applyHashState(location.hash);
+  const calcTouched = applyHashState(location.hash);
+  const view = applyViewHash(location.hash, calcTouched);
 
   syncAllControls();
+  syncWalkthroughControls();
+  showView(view, { sync: false });
 }
 init();
 </script>
