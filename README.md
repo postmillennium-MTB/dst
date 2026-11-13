@@ -15,7 +15,7 @@ It is an educational illustration of how DST return mechanics work. It is not in
 
 ## Opening / hosting it
 
-Double-click `index.html`. There is no build step, no install and no external dependency. On the PMR site it runs inside an iframe.
+Double-click `index.html`. There is no build step and no install. The only external resource is the PMR background texture, a mask image loaded from postmillenniumrenaissance.com; opened as a local file it doesn't load, and the tool works the same without it. On the PMR site it runs inside an iframe.
 
 ## Views
 
@@ -52,7 +52,7 @@ Links made before the views existed carry calculator settings and no `v=` key, s
 - *Cash-on-cash (sets all years)*: one number that fills the whole yield schedule. Locked at 0% for zero coupon DSTs.
 - *Loan-to-value (LTV)*: debt as a share of the property's value, the way offering documents quote it. Most categories allow 0–70%; zero coupon allows 60–90%.
 - *Loan interest rate* and *Amortization term* (zero coupon only): the amortizing loan the rent pays down.
-- *Year-by-year yield & tax shelter*: a collapsible ten-row table. For each year 1–10, set the yield (% of net equity) and the share of that year's distribution that is tax-sheltered (%). Rows beyond the holding period are dimmed but still used by the Monte Carlo. A fourth, read-only column shows each year's **taxable-equivalent yield**, with the after-tax yield beneath it. After-tax = yield × (1 − unsheltered share × tax rate on distributions, plus state tax and NIIT). Taxable-equivalent = after-tax ÷ (1 − tax rate), the yield a fully taxed investment would need to leave the same cash. For example, a 5% yield with 50% sheltered at a 37% rate gives 4.07% after tax and 6.47% taxable-equivalent. Both ignore the later tax at sale caused by the basis reduction.
+- *Year-by-year yield & tax shelter*: a collapsible ten-row table. For each year 1–10, set the yield (% of net equity) and the share of that year's distribution that is tax-sheltered (%). Rows beyond the holding period are dimmed but still used by the Monte Carlo. A fourth column shows each year's **taxable-equivalent yield**, with the after-tax yield beneath it. It is editable: type a target and that year's tax-sheltered % is solved to match (one decimal place). The reachable range runs from the yield itself (0% sheltered) to the 100%-sheltered figure, and typed values are clamped to it. With a 0% yield or a 0% tax rate the field is shown but can't be edited. After-tax = yield × (1 − unsheltered share × tax rate on distributions, plus state tax and NIIT). Taxable-equivalent = after-tax ÷ (1 − tax rate), the yield a fully taxed investment would need to leave the same cash. For example, a 5% yield with 50% sheltered at a 37% rate gives 4.07% after tax and 6.47% taxable-equivalent. Both ignore the later tax at sale caused by the basis reduction.
 - *Appreciation rate*: annual, compounded on the full property value.
 - *Assumed holding period*: 4–10 years, shown against an illustrative bell curve.
 

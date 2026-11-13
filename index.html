@@ -183,14 +183,41 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* Page color lives on <html> ONLY. The PMR texture below sits at z-index -1,
+   which paints above the root background but beneath any background on
+   <body> -- giving body a background again would hide the texture. */
+html { background: var(--surface-page); }
 html, body {
-  background: var(--surface-page);
   color: var(--text-primary);
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   font-variant-numeric: proportional-nums;
 }
 
-body { padding: 32px 20px 64px; }
+body { padding: 32px 20px 64px; position: relative; }
+
+/* ---- PMR background texture ---------------------------------------------
+   Supplied CSS, used exactly as given. The one deliberate external
+   dependency in this file: the mask image is PMR's own asset on
+   postmillenniumrenaissance.com. If it can't load (a local double-click,
+   offline) the layer simply shows nothing -- the tool is unaffected.
+   position:absolute rather than fixed because the tool is iframed. */
+/* PMR texture layer 1: crowe-1884-14685 (from US Design Patent 14,685) */
+.texture{
+  position:absolute;
+  inset:0;
+  z-index:-1;
+  pointer-events:none;
+  background-color:var(--tex-ink,#3A6830);
+  opacity:var(--tex-opacity,0.05);
+  -webkit-mask-image:url("https://www.postmillenniumrenaissance.com/textures/masks/crowe-1884-14685.webp");
+  mask-image:url("https://www.postmillenniumrenaissance.com/textures/masks/crowe-1884-14685.webp");
+  -webkit-mask-size:520px auto;
+  mask-size:520px auto;
+  -webkit-mask-repeat:repeat;
+  mask-repeat:repeat;
+}
+
+:root{ --tex-ink:#3A6830; --tex-opacity:0.05; }
 
 .page {
   max-width: 920px;
@@ -503,12 +530,15 @@ button:focus-visible,
   .yield-table td { padding-right: 8px; }
   .yield-table input[type="number"] { width: 84px; }
 }
-/* Computed (read-only) after-tax yield column -- plain text, not an input, so
-   it reads as an output of the two editable columns beside it. */
-/* The "after tax" sub-line may wrap so the column fits a phone-width card. */
+/* Taxable-equivalent column: an editable input (typing a target back-solves
+   the tax-sheltered % beside it) with the after-tax yield as a read-only
+   sub-line. The sub-line may wrap so the column fits a phone-width card. */
 .yield-table td.after-tax-yield { font-variant-numeric: tabular-nums; color: var(--text-secondary); line-height: 1.2; }
 .yield-table td.after-tax-yield .tey { font-weight: 600; color: var(--text-primary); white-space: nowrap; }
-.yield-table td.after-tax-yield .net { display: block; font-size: 0.72rem; color: var(--text-muted); }
+.yield-table td.after-tax-yield .net { display: block; font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+.yield-table td.after-tax-yield input { font-weight: 600; }
+/* No shelter can move it (0% yield, or a 0% / 100% tax rate): shown, not editable. */
+.yield-table td.after-tax-yield input:disabled { background: transparent; border-color: transparent; color: var(--text-primary); padding-left: 0; }
 .dist-tax-row { margin-bottom: 14px; max-width: 260px; }
 
 /* ---- Below-minimum DST allocation warning ---------------------------------- */
@@ -1047,6 +1077,7 @@ body:not([data-view="calculator"]) header p.subtitle { display: none; }
 </style>
 </head>
 <body>
+<div class="texture" aria-hidden="true"></div>
 
 <div class="page">
 
@@ -1366,6 +1397,7 @@ body:not([data-view="calculator"]) header p.subtitle { display: none; }
       and not a forecast. Consult a qualified tax advisor and read the offering documents before making
       any investment decision. Nothing here carries any guarantee of accuracy.
     </p>
+    <p>Background pattern from US Design Patent No. 14,685 (Eugene A. Crowe, 1884); the patent has long expired.</p>
     <p class="citations">
       <a href="https://www.law.cornell.edu/uscode/text/26/1031" target="_blank" rel="noopener noreferrer">26 U.S. Code &sect; 1031</a>
       <span aria-hidden="true">&middot;</span>
@@ -2467,9 +2499,53 @@ function taxableEquivYield(yieldPct, shelteredPct) {
 }
 const fmtYieldPct = x => x === null ? "\u2014" : x.toFixed(2) + "%";
 
-// One cell of the column: taxable-equivalent on top, after-tax beneath.
-function yieldCellHTML(yieldPct, shelteredPct) {
-  return `<span class="tey">${fmtYieldPct(taxableEquivYield(yieldPct, shelteredPct))}</span><span class="net">${fmtYieldPct(afterTaxYield(yieldPct, shelteredPct))} after tax</span>`;
+// The reverse of taxableEquivYield: which tax-sheltered % produces a target
+// taxable-equivalent yield, so that column can be typed into directly.
+//   TEY = y * (1 - (1 - s) * r) / (1 - r)   =>   s = 1 - (1 - TEY * (1 - r) / y) / r
+// The reachable range is 0% sheltered (TEY = y) to 100% (TEY = y / (1 - r)),
+// so the target is clamped to that band first. Returns null when no shelter
+// can move the figure (0% yield, or a rate of 0% or 100%) -- the input is
+// then disabled rather than silently ignoring what was typed.
+function teyRange(yieldPct) {
+  const rate = withAddOns(state.ordinaryRate) / 100;
+  if (yieldPct <= 0 || rate <= 0 || rate >= 1) return null;
+  return { min: yieldPct, max: yieldPct / (1 - rate), rate };
+}
+function shelteredForTey(yieldPct, teyPct) {
+  const range = teyRange(yieldPct);
+  if (!range) return null;
+  const target = clamp(teyPct, range.min, range.max);
+  const s = 1 - (1 - target * (1 - range.rate) / yieldPct) / range.rate;
+  // One decimal: enough to land within a hundredth of the typed yield,
+  // without a 15-digit percentage appearing in the sheltered column.
+  return clamp(Math.round(s * 1000) / 10, 0, 100);
+}
+// Rounded to two places for the input, floored/ceiled at the ends so the
+// displayed min/max never exclude the value actually shown in the box.
+const teyAttr = (x, dir) => (dir === "floor" ? Math.floor(x * 100) : dir === "ceil" ? Math.ceil(x * 100) : Math.round(x * 100)) / 100;
+
+// One cell of the column: the editable taxable-equivalent input on top, the
+// after-tax yield beneath. Built once per row; refreshTeyCell keeps it current.
+function yieldCellHTML(dst, t) {
+  return `<input type="number" step="0.01" aria-label="Year ${t + 1} taxable-equivalent yield, percent"
+      data-field="tey" data-year="${t}" data-id="${dst.id}"><span class="net"></span>`;
+}
+
+// Re-fill one taxable-equivalent cell from state. The input's own value is
+// left alone while it has focus, so the presenter's typing is never rewritten
+// mid-keystroke; its bounds and the after-tax line always update.
+function refreshTeyCell(td, dst, t) {
+  const y = dst.yields[t], sh = dst.sheltered[t];
+  const input = td.querySelector("input");
+  const range = teyRange(y);
+  input.disabled = !range;
+  if (range) { input.min = teyAttr(range.min, "floor"); input.max = teyAttr(range.max, "ceil"); }
+  else { input.removeAttribute("min"); input.removeAttribute("max"); }
+  if (document.activeElement !== input) {
+    const tey = taxableEquivYield(y, sh);
+    input.value = tey === null ? "" : teyAttr(tey);
+  }
+  td.querySelector(".net").textContent = `${fmtYieldPct(afterTaxYield(y, sh))} after tax`;
 }
 
 // Re-fills the after-tax yield column of every open-or-closed schedule in
@@ -2480,7 +2556,7 @@ function refreshAfterTaxYields() {
   state.dsts.forEach(dst => {
     dstListEl.querySelectorAll(`.yield-schedule[data-id="${dst.id}"] [data-after-tax-year]`).forEach(td => {
       const t = Number(td.dataset.afterTaxYear);
-      td.innerHTML = yieldCellHTML(dst.yields[t], dst.sheltered[t]);
+      refreshTeyCell(td, dst, t);
     });
   });
 }
@@ -2495,9 +2571,9 @@ function yieldScheduleHTML(dst) {
         <td>Year ${t + 1}</td>
         <td><input type="number" min="0" max="30" step="0.1" value="${y}" aria-label="Year ${t + 1} yield, percent"
           data-field="yields" data-year="${t}" data-id="${dst.id}"></td>
-        <td><input type="number" min="0" max="100" step="1" value="${dst.sheltered[t]}" aria-label="Year ${t + 1} tax-sheltered share, percent"
+        <td><input type="number" min="0" max="100" step="0.1" value="${dst.sheltered[t]}" aria-label="Year ${t + 1} tax-sheltered share, percent"
           data-field="sheltered" data-year="${t}" data-id="${dst.id}"></td>
-        <td class="after-tax-yield" data-after-tax-year="${t}">${yieldCellHTML(y, dst.sheltered[t])}</td>
+        <td class="after-tax-yield" data-after-tax-year="${t}">${yieldCellHTML(dst, t)}</td>
       </tr>`).join("");
   return `
         <details class="yield-schedule" data-id="${dst.id}"${dst.scheduleOpen ? " open" : ""}>
@@ -2511,7 +2587,7 @@ function yieldScheduleHTML(dst) {
             <thead><tr><th>Year</th><th>Yield, %/yr</th><th>Tax-sheltered, %</th><th>Taxable-equiv. yield</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
-          <p class="field-note">Yield is the distribution as a % of net equity. Tax-sheltered is the share of that year's distribution not taxed currently (typically offset by depreciation). After tax = yield &times; (1 &minus; unsheltered share &times; the "Tax rate on distributions" in Projected results, plus any state tax and NIIT from Tax assumptions). Taxable-equivalent = after tax &divide; (1 &minus; that rate): what a fully taxed investment would have to yield to leave you the same cash. Sheltered income usually lowers your basis, so more of it is taxed when the property sells; this column doesn't count that later tax.</p>
+          <p class="field-note">Yield is the distribution as a % of net equity. Tax-sheltered is the share of that year's distribution not taxed currently (typically offset by depreciation). After tax = yield &times; (1 &minus; unsheltered share &times; the "Tax rate on distributions" in Projected results, plus any state tax and NIIT from Tax assumptions). Taxable-equivalent = after tax &divide; (1 &minus; that rate): what a fully taxed investment would have to yield to leave you the same cash. You can type a taxable-equivalent yield directly and the tax-sheltered % is solved to match (it can range from the yield itself, at 0% sheltered, up to the 100%-sheltered figure). Sheltered income usually lowers your basis, so more of it is taxed when the property sells; this column doesn't count that later tax.</p>
         </details>`;
 }
 
@@ -2592,6 +2668,10 @@ function renderCardList() {
     const amountField = dstListEl.querySelector(`.dst-card[data-id="${dst.id}"] input[data-field="amount"]`)?.closest(".field");
     if (amountField) amountField.insertAdjacentHTML("beforeend", `<p class="min-warning">Below typical ${fmtUSD.format(MIN_DST_INVESTMENT)} DST minimum</p>`);
   });
+
+  // The taxable-equivalent cells are built empty; fill them now, since a
+  // collapse/expand rebuild isn't followed by renderResults().
+  refreshAfterTaxYields();
 }
 
 function renderResults() {
@@ -3860,6 +3940,24 @@ function onDstFieldEvent(e, normalize) {
   // 500%/yr appreciation rate went straight into the model.
   const n = clampToField(el, el.value);
   if (n === null) return;
+
+  // A typed taxable-equivalent yield isn't stored: it's turned into that
+  // year's tax-sheltered %, which is. The sheltered input in the same row is
+  // patched in place; on commit the box snaps to the exact figure the solved
+  // shelter produces (within a hundredth of what was typed).
+  if (field === "tey") {
+    const t = Number(el.dataset.year);
+    const s = shelteredForTey(dst.yields[t], n);
+    if (s === null) return;
+    dst.sheltered[t] = s;
+    const shEl = dstListEl.querySelector(`input[data-field="sheltered"][data-year="${t}"][data-id="${id}"]`);
+    if (shEl) shEl.value = s;
+    if (normalize) el.value = teyAttr(taxableEquivYield(dst.yields[t], s));
+    renderResults();
+    scheduleUrlSync();
+    return;
+  }
+
   if (field === "yields" || field === "sheltered") {
     // One cell of the year-by-year schedule. Year 1's yield is mirrored into
     // cashOnCash so the single field above (and the collapsed summary) show it.
@@ -4012,7 +4110,7 @@ document.body.classList.toggle("is-touch", isTouchDevice);
 
 /* ----------------------------------------------------------------------------
    INIT
-   Seeds a two-DST example (a $1.2M industrial + $0.8M multifamily position)
+   Seeds a one-DST example (the full $2M in a single multifamily DST)
    so the tool is never a blank slate on first load -- remove or adjust
    freely, this is just a friendlier starting point. Any scenario in the URL
    hash replaces it.
@@ -4021,8 +4119,7 @@ function init() {
   buildScalarFields();
   enhanceCheckboxes();
 
-  state.dsts.push({ ...makeDst("industrial"), amount: 1200000 });
-  state.dsts.push({ ...makeDst("multifamily"), amount: 800000 });
+  state.dsts.push(makeDst("multifamily")); // makeDst fills the unallocated proceeds
 
   buildWalkthroughFields();
   wireViews();
