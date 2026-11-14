@@ -93,6 +93,13 @@
 <meta name="twitter:title" content="1031 DST Portfolio Calculator">
 <meta name="twitter:description" content="Model potential income and appreciation from a 1031 exchange into one or more Delaware Statutory Trusts (DSTs).">
 
+<!-- Caveat (Google Fonts) for the handwritten gross-up note on the Fiduciary
+     card. A deliberate external dependency: if it can't load, the note falls
+     back to the system's cursive font and everything still works. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&display=swap" rel="stylesheet">
+
 <style>
 /* ==========================================================================
    DESIGN TOKENS
@@ -1112,6 +1119,24 @@ body:not([data-view="calculator"]) header p.subtitle { display: none; }
   .wt-step { grid-template-columns: 1.15fr 1fr; gap: 32px; }
 }
 
+/* ---- Handwritten gross-up note (Fiduciary card) ----------------------------
+   Phone: sits under the fiduciary controls. Desktop: a right-hand column.
+   Ink blue, slight tilt, and a hand-drawn underline -- like a note an advisor
+   scribbled in the margin. */
+.fid-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.hand-note { display: none; font-family: "Caveat", "Segoe Print", "Bradley Hand", cursive; color: #1e4fa3; line-height: 1.1; transform: rotate(-2deg); transform-origin: left top; padding: 4px 6px; }
+.hand-note.visible { display: block; }
+.hand-note .eq   { font-size: 1.55rem; font-weight: 500; }
+.hand-note .big  { font-size: 2.3rem; font-weight: 700; display: inline-block; position: relative; margin-top: 4px; }
+.hand-note .big svg { position: absolute; left: -2%; bottom: -8px; width: 104%; height: 12px; overflow: visible; }
+.hand-note .words { font-size: 1.6rem; font-weight: 500; display: block; }
+@media (min-width: 720px) {
+  .fid-layout { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+  .hand-note { padding-top: 8px; max-width: 380px; }
+  .hand-note .eq { white-space: nowrap; }
+}
+@media print { .hand-note { color: #1e4fa3; } }
+
 /* ---- Results toolbar + print button --------------------------------------- */
 .results-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .results-toolbar .hint { margin-bottom: 16px; }
@@ -1508,6 +1533,8 @@ button.icon-btn:hover { color: var(--text-primary); }
       <span class="collapse-btn" aria-hidden="true"></span>
     </div>
     <div class="panel-body">
+    <div class="fid-layout">
+    <div class="fid-main">
     <label class="switch-row">
       <span class="switch">
         <input type="checkbox" id="fiduciaryToggle" checked>
@@ -1526,6 +1553,10 @@ button.icon-btn:hover { color: var(--text-primary); }
       <div class="fee-rates-fields" id="feeRatesFieldsWrap"></div>
     </div>
     <div id="grossUpResult" aria-live="polite"></div>
+    </div><!-- /fid-main -->
+    <!-- Handwritten-style gross-up equation, filled by renderHandNote(). -->
+    <aside class="hand-note" id="handNote" aria-live="polite"></aside>
+    </div><!-- /fid-layout -->
     </div>
   </section>
   </div><!-- /view-calculator -->
@@ -2036,7 +2067,7 @@ const state = {
   fiduciary: true, // no upfront/placement fees while true
   upfrontFeeRate: DEFAULT_UPFRONT_FEE_PCT,     // editable, only matters while !fiduciary
   placementFeeRate: DEFAULT_PLACEMENT_FEE_PCT, // editable; charged while !fiduciary, used as the comparison load by the gross-up
-  grossUp: false,  // "Gross up" readout showing; only offered while fiduciary
+  grossUp: true,   // "Gross up" on by default, like Fiduciary; only offered while fiduciary
   capGainsRate: DEFAULT_CAP_GAINS_RATE_PCT,    // applied to any boot (unallocated proceeds taken as cash)
   stateTaxRate: DEFAULT_STATE_TAX_PCT,         // added to every federal rate (see taxAddOnPct)
   niit: false,                                 // true adds NIIT_RATE_PCT to every federal rate
@@ -2790,6 +2821,7 @@ function donutSVG(segments, size = 116, strokeWidth = 22) {
    ---------------------------------------------------------------------------- */
 const dstListEl = document.getElementById("dstList");
 const statGridEl = document.getElementById("statGrid");
+const handNoteEl = document.getElementById("handNote");
 const printBtnEl = document.getElementById("printBtn");
 const printSummaryEl = document.getElementById("printSummary");
 const upreitPanelEl = document.getElementById("upreitPanel");
@@ -3064,6 +3096,7 @@ function renderResults() {
   const totalFeePct = state.upfrontFeeRate + state.placementFeeRate;
   const portfolio = computePortfolio(state.dsts, state.fiduciary, totalFeePct, state.grossUp);
   renderGrossUp(portfolio.totalGross);
+  renderHandNote(portfolio.totalGross);
   renderTaxCombined();
 
   // Debt paydown only exists for amortizing (zero coupon) DSTs, so its tile and
@@ -3374,6 +3407,23 @@ function renderGrossUp(committed) {
       Illustrative arithmetic based on the fee rates entered above; whether an offering prices a no-load purchase this way, and its actual fees, vary. Not a projection or guarantee of returns.</p>`;
 }
 
+// The margin note: "committed ÷ (1 − load) = grossed-up (+additional
+// principal)", in the handwriting font. Live with the fee rates and the
+// committed total; shown only while Fiduciary is on and the math is defined.
+function renderHandNote(committed) {
+  const totalFeePct = state.upfrontFeeRate + state.placementFeeRate;
+  const show = state.fiduciary && committed > 0 && totalFeePct > 0 && totalFeePct < 100;
+  handNoteEl.classList.toggle("visible", show);
+  if (!show) { handNoteEl.innerHTML = ""; return; }
+  const feeRate = totalFeePct / 100;
+  const grossedUp = committed / (1 - feeRate);
+  const additional = grossedUp - committed;
+  handNoteEl.innerHTML = `
+    <div class="eq">${fmtUSD.format(committed)} &divide; (1 &minus; ${trimNum(feeRate)}) = ${fmtUSD.format(grossedUp)}</div>
+    <div class="big">+${fmtUSD.format(additional)}<svg viewBox="0 0 100 12" preserveAspectRatio="none" aria-hidden="true"><path d="M1 8 C 20 3, 45 11, 70 5 S 95 6, 99 4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></div>
+    <span class="words">additional principal</span>`;
+}
+
 // Hooks SCALAR_FIELDS entries can name in their `onChange`. Looked up by
 // name at commit time -- see the registry comment for why.
 const FIELD_HOOKS = { updateFiduciaryHint };
@@ -3414,7 +3464,7 @@ function encodeState() {
     parts.push(`${f.urlKey}=${trimNum(v)}`);
   }
   parts.push(`fid=${state.fiduciary ? 1 : 0}`);
-  if (state.grossUp) parts.push("gu=1");
+  parts.push(`gu=${state.grossUp ? 1 : 0}`); // always written: the default is now on
   if (state.niit) parts.push("ni=1");
   parts.push(`adv=${state.advancedTax ? 1 : 0}`);
   if (state.upreit) parts.push("up=1");
@@ -3521,6 +3571,10 @@ function applyHashState(rawHash) {
     mcPanelEl.classList.toggle("visible", mcToggleEl.checked);
     touched = true;
   }
+  // Links made while Gross up defaulted OFF wrote nothing when it was off. So a
+  // link carrying calculator settings but no `gu` means off -- it keeps
+  // showing what it showed when it was shared. (New links always write gu.)
+  if (touched && !params.has("gu")) state.grossUp = false;
   return touched;
 }
 
