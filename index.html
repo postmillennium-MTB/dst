@@ -563,6 +563,21 @@ button:focus-visible,
 .upreit-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
 .upreit-years summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--accent); padding: 6px 0; }
 .upreit-years summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+/* Hover tooltip (focus too, so a tap on a phone or a keyboard tab shows it).
+   Drops BELOW the header: the table sits in an overflow-x scroller, which
+   would clip anything drawn above it. */
+.tip { position: relative; cursor: help; border-bottom: 1px dotted currentColor; }
+.tip::after {
+  content: attr(data-tip);
+  position: absolute; left: 50%; top: calc(100% + 6px); transform: translateX(-50%);
+  white-space: nowrap; padding: 5px 9px; border-radius: 6px;
+  background: var(--text-primary); color: #fff;
+  font-size: 0.8rem; font-weight: 600; letter-spacing: 0; text-transform: none;
+  opacity: 0; pointer-events: none; transition: opacity 120ms; z-index: 2;
+}
+.tip:hover::after, .tip:focus::after { opacity: 1; }
+.tip:focus { outline: none; }
+.tip:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .upreit-note { font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5; margin-top: 12px; max-width: 80ch; }
 
 /* ---- Below-minimum DST allocation warning ---------------------------------- */
@@ -1467,7 +1482,7 @@ button.icon-btn:hover { color: var(--text-primary); }
         <summary>Year by year</summary>
         <div class="table-scroll">
           <table class="breakdown">
-            <thead><tr><th>Year</th><th>Unit value</th><th>Distribution</th><th>Return of capital</th><th>Taxable</th><th>Tax</th><th>After tax</th><th>Remaining basis</th></tr></thead>
+            <thead><tr><th>Year</th><th>Unit value</th><th>Distribution</th><th>Return of capital</th><th><span class="tip" tabindex="0" data-tip="Ordinary income" aria-label="Taxable: ordinary income">Taxable</span></th><th>Tax</th><th>After tax</th><th>Remaining basis</th></tr></thead>
             <tbody id="upreitBody10"></tbody>
           </table>
         </div>
