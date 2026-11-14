@@ -93,6 +93,13 @@
 <meta name="twitter:title" content="1031 DST Portfolio Calculator">
 <meta name="twitter:description" content="Model potential income and appreciation from a 1031 exchange into one or more Delaware Statutory Trusts (DSTs).">
 
+<!-- Caveat (Google Fonts) for the handwritten gross-up note on the Fiduciary
+     card. A deliberate external dependency: if it can't load, the note falls
+     back to the system's cursive font and everything still works. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&display=swap" rel="stylesheet">
+
 <style>
 /* ==========================================================================
    DESIGN TOKENS
@@ -563,6 +570,21 @@ button:focus-visible,
 .upreit-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
 .upreit-years summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--accent); padding: 6px 0; }
 .upreit-years summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+/* Hover tooltip (focus too, so a tap on a phone or a keyboard tab shows it).
+   Drops BELOW the header: the table sits in an overflow-x scroller, which
+   would clip anything drawn above it. */
+.tip { position: relative; cursor: help; border-bottom: 1px dotted currentColor; }
+.tip::after {
+  content: attr(data-tip);
+  position: absolute; left: 50%; top: calc(100% + 6px); transform: translateX(-50%);
+  white-space: nowrap; padding: 5px 9px; border-radius: 6px;
+  background: var(--text-primary); color: #fff;
+  font-size: 0.8rem; font-weight: 600; letter-spacing: 0; text-transform: none;
+  opacity: 0; pointer-events: none; transition: opacity 120ms; z-index: 2;
+}
+.tip:hover::after, .tip:focus::after { opacity: 1; }
+.tip:focus { outline: none; }
+.tip:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .upreit-note { font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5; margin-top: 12px; max-width: 80ch; }
 
 /* ---- Below-minimum DST allocation warning ---------------------------------- */
@@ -1010,6 +1032,8 @@ body:not([data-view="calculator"]) header p.subtitle { display: none; }
   font-size: 0.9rem; line-height: 1.4;
 }
 .path-fact strong { flex: none; min-width: 7.5em; color: var(--text-secondary); font-weight: 600; }
+.fact-important { display: flex; gap: 6px; align-items: flex-start; margin-top: 6px; font-weight: 600; color: var(--text-primary); }
+.fact-important .imp-icon { flex: none; display: inline-flex; color: #b42318; margin-top: 1px; }
 .path-fine { font-size: 0.84rem; color: var(--text-secondary); line-height: 1.5; border-left: 3px solid var(--illo-highlight); padding: 2px 0 2px 10px; }
 
 /* Stage entrance: stages and arrows fade up in order so each path "plays"
@@ -1094,6 +1118,24 @@ body:not([data-view="calculator"]) header p.subtitle { display: none; }
 @media (min-width: 720px) {
   .wt-step { grid-template-columns: 1.15fr 1fr; gap: 32px; }
 }
+
+/* ---- Handwritten gross-up note (Fiduciary card) ----------------------------
+   Phone: sits under the fiduciary controls. Desktop: a right-hand column.
+   Ink blue, slight tilt, and a hand-drawn underline -- like a note an advisor
+   scribbled in the margin. */
+.fid-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.hand-note { display: none; font-family: "Caveat", "Segoe Print", "Bradley Hand", cursive; color: #1e4fa3; line-height: 1.1; transform: rotate(-2deg); transform-origin: left top; padding: 4px 6px; }
+.hand-note.visible { display: block; }
+.hand-note .eq   { font-size: 1.55rem; font-weight: 500; }
+.hand-note .big  { font-size: 2.3rem; font-weight: 700; display: inline-block; position: relative; margin-top: 4px; }
+.hand-note .big svg { position: absolute; left: -2%; bottom: -8px; width: 104%; height: 12px; overflow: visible; }
+.hand-note .words { font-size: 1.6rem; font-weight: 500; display: block; }
+@media (min-width: 720px) {
+  .fid-layout { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+  .hand-note { padding-top: 8px; max-width: 380px; }
+  .hand-note .eq { white-space: nowrap; }
+}
+@media print { .hand-note { color: #1e4fa3; } }
 
 /* ---- Results toolbar + print button --------------------------------------- */
 .results-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
@@ -1465,7 +1507,7 @@ button.icon-btn:hover { color: var(--text-primary); }
         <summary>Year by year</summary>
         <div class="table-scroll">
           <table class="breakdown">
-            <thead><tr><th>Year</th><th>Unit value</th><th>Distribution</th><th>Return of capital</th><th>Taxable</th><th>Tax</th><th>After tax</th><th>Remaining basis</th></tr></thead>
+            <thead><tr><th>Year</th><th>Unit value</th><th>Distribution</th><th>Return of capital</th><th><span class="tip" tabindex="0" data-tip="Ordinary income" aria-label="Taxable: ordinary income">Taxable</span></th><th>Tax</th><th>After tax</th><th>Remaining basis</th></tr></thead>
             <tbody id="upreitBody10"></tbody>
           </table>
         </div>
@@ -1491,6 +1533,8 @@ button.icon-btn:hover { color: var(--text-primary); }
       <span class="collapse-btn" aria-hidden="true"></span>
     </div>
     <div class="panel-body">
+    <div class="fid-layout">
+    <div class="fid-main">
     <label class="switch-row">
       <span class="switch">
         <input type="checkbox" id="fiduciaryToggle" checked>
@@ -1509,6 +1553,10 @@ button.icon-btn:hover { color: var(--text-primary); }
       <div class="fee-rates-fields" id="feeRatesFieldsWrap"></div>
     </div>
     <div id="grossUpResult" aria-live="polite"></div>
+    </div><!-- /fid-main -->
+    <!-- Handwritten-style gross-up equation, filled by renderHandNote(). -->
+    <aside class="hand-note" id="handNote" aria-live="polite"></aside>
+    </div><!-- /fid-layout -->
     </div>
   </section>
   </div><!-- /view-calculator -->
@@ -1590,6 +1638,7 @@ const ICON_PATHS = {
   listOrdered:   `<path d="M10 12h11"/><path d="M10 18h11"/><path d="M10 6h11"/><path d="M4 10h2"/><path d="M4 6h1v4"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/>`,
   calculator:    `<rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/>`,
   printer:       `<path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/>`,
+  octagonAlert:  `<path d="M12 16h.01"/><path d="M12 8v4"/><path d="M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z"/>`,
   landmark:      `<path d="M10 18v-7"/><path d="M11.119 2.205a2 2 0 0 1 1.762 0l7.84 3.846A.5.5 0 0 1 20.5 7h-17a.5.5 0 0 1-.22-.949z"/><path d="M14 18v-7"/><path d="M18 18v-7"/><path d="M3 22h18"/><path d="M6 18v-7"/>`,
 };
 
@@ -1857,7 +1906,9 @@ const DEFAULT_VIEW = "paths";
                 role   { icon, text } -- the investor's role, as a chip
                 note   one sentence, plain language
      arrows   one per gap between stages: { label, sub }
-     facts    exactly three short "what it's like after" facts
+     facts    exactly three short "what it's like after" facts: { k, v },
+              plus an optional `important` sentence shown after the
+              octagon-alert icon (its accessible name is "Important")
      fine     the accuracy caveat that keeps the picture honest. Each one is
               there because the simple version is wrong in a way that
               matters -- keep them when editing.
@@ -1916,8 +1967,8 @@ const EXCHANGE_PATHS = [
         role: { icon: "armchair", text: "Passive investor" },
         note: "A sponsor runs one property, much like path 2." },
       { when: "Then · after the 721", title: "Units in a REIT's operating partnership", illo: "upreit",
-        role: { icon: "pieChart", text: "OP unitholder" },
-        note: "Your stake is now part of a larger pool of properties held through the REIT's operating partnership." },
+        role: { icon: "pieChart", text: "Operating Partnership unitholder" },
+        note: "Your stake is now part of a larger pool of properties held through the REIT's operating partnership. Owning shares of a REIT looks and feels similar to owning a share of stock or ETF, most pay dividends monthly. The \"operating partnership\" is REIT jargon that effectively means you own shares of the private REIT." },
     ],
     arrows: [
       { label: "1031 exchange", sub: "tax deferred" },
@@ -1926,7 +1977,8 @@ const EXCHANGE_PATHS = [
     facts: [
       { k: "Who manages",  v: "The REIT's management team" },
       { k: "Your control", v: "None; you hold partnership units" },
-      { k: "What's next",  v: "You can hold REIT shares as long as you choose, selling REIT shares will produce capital gains." },
+      { k: "What's next",  v: "You can hold REIT shares as long as you choose, selling REIT shares will realize capital gains.",
+        important: "Investors can no longer do additional 1031 exchanges of any type after a 721 UPREIT." },
     ],
     fine: "After a 721 you hold operating partnership (OP) units, not REIT shares. They can usually be converted to REIT shares or redeemed for cash later, and that conversion is a taxable event; converting in batches can spread the tax over several years. Once in the UPREIT, further 1031 exchanges are generally no longer available. Whether, and when, a DST is contributed to an UPREIT is typically the sponsor's decision, not a guarantee.",
   },
@@ -2015,7 +2067,7 @@ const state = {
   fiduciary: true, // no upfront/placement fees while true
   upfrontFeeRate: DEFAULT_UPFRONT_FEE_PCT,     // editable, only matters while !fiduciary
   placementFeeRate: DEFAULT_PLACEMENT_FEE_PCT, // editable; charged while !fiduciary, used as the comparison load by the gross-up
-  grossUp: false,  // "Gross up" readout showing; only offered while fiduciary
+  grossUp: true,   // "Gross up" on by default, like Fiduciary; only offered while fiduciary
   capGainsRate: DEFAULT_CAP_GAINS_RATE_PCT,    // applied to any boot (unallocated proceeds taken as cash)
   stateTaxRate: DEFAULT_STATE_TAX_PCT,         // added to every federal rate (see taxAddOnPct)
   niit: false,                                 // true adds NIIT_RATE_PCT to every federal rate
@@ -2769,6 +2821,7 @@ function donutSVG(segments, size = 116, strokeWidth = 22) {
    ---------------------------------------------------------------------------- */
 const dstListEl = document.getElementById("dstList");
 const statGridEl = document.getElementById("statGrid");
+const handNoteEl = document.getElementById("handNote");
 const printBtnEl = document.getElementById("printBtn");
 const printSummaryEl = document.getElementById("printSummary");
 const upreitPanelEl = document.getElementById("upreitPanel");
@@ -3043,6 +3096,7 @@ function renderResults() {
   const totalFeePct = state.upfrontFeeRate + state.placementFeeRate;
   const portfolio = computePortfolio(state.dsts, state.fiduciary, totalFeePct, state.grossUp);
   renderGrossUp(portfolio.totalGross);
+  renderHandNote(portfolio.totalGross);
   renderTaxCombined();
 
   // Debt paydown only exists for amortizing (zero coupon) DSTs, so its tile and
@@ -3353,6 +3407,23 @@ function renderGrossUp(committed) {
       Illustrative arithmetic based on the fee rates entered above; whether an offering prices a no-load purchase this way, and its actual fees, vary. Not a projection or guarantee of returns.</p>`;
 }
 
+// The margin note: "committed ÷ (1 − load) = grossed-up (+additional
+// principal)", in the handwriting font. Live with the fee rates and the
+// committed total; shown only while Fiduciary is on and the math is defined.
+function renderHandNote(committed) {
+  const totalFeePct = state.upfrontFeeRate + state.placementFeeRate;
+  const show = state.fiduciary && committed > 0 && totalFeePct > 0 && totalFeePct < 100;
+  handNoteEl.classList.toggle("visible", show);
+  if (!show) { handNoteEl.innerHTML = ""; return; }
+  const feeRate = totalFeePct / 100;
+  const grossedUp = committed / (1 - feeRate);
+  const additional = grossedUp - committed;
+  handNoteEl.innerHTML = `
+    <div class="eq">${fmtUSD.format(committed)} &divide; (1 &minus; ${trimNum(feeRate)}) = ${fmtUSD.format(grossedUp)}</div>
+    <div class="big">+${fmtUSD.format(additional)}<svg viewBox="0 0 100 12" preserveAspectRatio="none" aria-hidden="true"><path d="M1 8 C 20 3, 45 11, 70 5 S 95 6, 99 4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></div>
+    <span class="words">additional principal</span>`;
+}
+
 // Hooks SCALAR_FIELDS entries can name in their `onChange`. Looked up by
 // name at commit time -- see the registry comment for why.
 const FIELD_HOOKS = { updateFiduciaryHint };
@@ -3393,7 +3464,7 @@ function encodeState() {
     parts.push(`${f.urlKey}=${trimNum(v)}`);
   }
   parts.push(`fid=${state.fiduciary ? 1 : 0}`);
-  if (state.grossUp) parts.push("gu=1");
+  parts.push(`gu=${state.grossUp ? 1 : 0}`); // always written: the default is now on
   if (state.niit) parts.push("ni=1");
   parts.push(`adv=${state.advancedTax ? 1 : 0}`);
   if (state.upreit) parts.push("up=1");
@@ -3500,6 +3571,10 @@ function applyHashState(rawHash) {
     mcPanelEl.classList.toggle("visible", mcToggleEl.checked);
     touched = true;
   }
+  // Links made while Gross up defaulted OFF wrote nothing when it was off. So a
+  // link carrying calculator settings but no `gu` means off -- it keeps
+  // showing what it showed when it was shared. (New links always write gu.)
+  if (touched && !params.has("gu")) state.grossUp = false;
   return touched;
 }
 
@@ -3769,7 +3844,7 @@ function pathCardHTML(p, n) {
         <span class="path-tag">${esc(p.tag)}</span>
       </div>
       <div class="path-flow">${parts.join("")}</div>
-      <div class="path-facts">${p.facts.map(f => `<div class="path-fact"><strong>${esc(f.k)}</strong><span>${esc(f.v)}</span></div>`).join("")}</div>
+      <div class="path-facts">${p.facts.map(f => `<div class="path-fact"><strong>${esc(f.k)}</strong><span>${esc(f.v)}${f.important ? `<span class="fact-important"><span class="imp-icon" role="img" aria-label="Important">${svgIcon("octagonAlert", 18)}</span>${esc(f.important)}</span>` : ""}</span></div>`).join("")}</div>
       <p class="path-fine">${esc(p.fine)}</p>
     </article>`;
 }
